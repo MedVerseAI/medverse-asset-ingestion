@@ -42,9 +42,11 @@ data/
 └── interim/                     Extracted or intermediate data
     ├── bodyparts3d/
     │   ├── obj_isa/
-    |   |     └── *.obj
+    |   |     └── isa_BP3D_4.0_obj_99/
+    |   |            └── *.obj
     │   └── obj_partof/
-    |         └── *.obj
+    |         └── partof_BP3D_4.0_obj_99/
+    |                └── *.obj
     └── brainnetome/
 ```
 

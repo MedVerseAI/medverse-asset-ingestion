@@ -10,7 +10,7 @@ Resolution order
 Repository root:
     1. ``MEDVERSE_ROOT`` environment variable (needed when a script runs
        inside Blender's text editor, where ``__file__`` may not exist).
-    2. Walk up from this file until ``pyproject.toml`` is found.
+    2. Walk up from this file until ``pyproject.toml` or `LICENSE` ` is found.
 
 Data directory:
     1. ``MEDVERSE_DATA_DIR`` environment variable (e.g. a large external drive).
