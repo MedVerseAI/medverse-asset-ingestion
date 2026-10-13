@@ -1,3 +1,5 @@
+venv/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -216,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+
+# Ignore massive raw datasets and compressed archives
+data/raw/*
+!data/raw/.gitkeep
+
+# Ignore extracted interim 3D meshes
+data/interim/*
+!data/interim/.gitkeep.DS_Store
