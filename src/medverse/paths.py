@@ -1,5 +1,5 @@
 """
-src/medverse/path.py
+src/medverse/paths.py
 
 Single source of truth for every filesystem location used by the pipeline.
 
@@ -10,7 +10,7 @@ Resolution order
 Repository root:
     1. ``MEDVERSE_ROOT`` environment variable (needed when a script runs
        inside Blender's text editor, where ``__file__`` may not exist).
-    2. Walk up from this file until ``pyproject.toml` or `LICENSE` ` is found.
+    2. Walk up from this file until ``pyproject.toml`` or ``LICENSE`` is found.
 
 Data directory:
     1. ``MEDVERSE_DATA_DIR`` environment variable (e.g. a large external drive).
@@ -20,6 +20,7 @@ Layout (see docs/data/download_and_layout.md)
 ---------------------------------------------
     data/raw/        original downloads, never modified
     data/interim/    extracted / intermediate files
+    data/processed/  final outputs (.blend model) and reports
 
 """
 from __future__ import annotations
@@ -58,6 +59,7 @@ DATA: Path = Path(os.environ.get(ENV_DATA, ROOT / "data")).expanduser().resolve(
 
 RAW: Path = DATA / "raw"
 INTERIM: Path = DATA / "interim"
+PROCESSED: Path = DATA / "processed"                       # NEW
 
 # --------------------------------------------------------------------------
 # BodyParts3D
@@ -65,10 +67,18 @@ INTERIM: Path = DATA / "interim"
 BP3D_RAW: Path = RAW / "bodyparts3d"
 BP3D_METADATA: Path = BP3D_RAW / "metadata"
 BP3D_ARCHIVES: Path = BP3D_RAW / "archives"
+BP3D_CHECKSUMS: Path = BP3D_RAW / "checksums.sha256"       # moved up from file end
+BP3D_README: Path = BP3D_RAW / "README_e.html"             # moved up from file end
 
 BP3D_INTERIM: Path = INTERIM / "bodyparts3d"
 BP3D_OBJ_ISA: Path = BP3D_INTERIM / "obj_isa"
 BP3D_OBJ_PARTOF: Path = BP3D_INTERIM / "obj_partof"
+
+# --- BodyParts3D export outputs (interim) ---              # NEW
+BP3D_EXPORT_DIR: Path = BP3D_INTERIM / "export_pieces"
+BP3D_EXPORT_MESHES: Path = BP3D_EXPORT_DIR / "meshes"
+BP3D_EXPORT_REFERENCE: Path = BP3D_EXPORT_DIR / "reference"
+BP3D_EXPORT_MANIFEST: Path = BP3D_EXPORT_DIR / "manifest.json"
 
 
 # Name of the folder created inside each extracted archive
@@ -84,9 +94,19 @@ BN_RAW: Path = RAW / "brainnetome"
 BN_ATLAS: Path = BN_RAW / "atlas"
 BN_LABELS: Path = BN_RAW / "labels"
 BN_LUT: Path = BN_LABELS / "BN_Atlas_246_LUT.txt"
+BN_MPM: Path = BN_ATLAS / "BNA_MPM_thr25_1.25mm.nii.gz"    # NEW
 
 BN_INTERIM: Path = INTERIM / "brainnetome"
 BN_PIECES_DIR: Path = BN_INTERIM / "voxel_export_pieces"
+BN_PM_DIR: Path = BN_INTERIM / "pm_3d_246"                 # NEW: per-region NIfTI volumes
+
+# --------------------------------------------------------------------------
+# Final outputs                                             # NEW SECTION
+# --------------------------------------------------------------------------
+FINAL: Path = PROCESSED / "final"
+FINAL_BLEND: Path = FINAL / "anatomical_model.blend"
+REPORTS: Path = PROCESSED / "reports"
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
@@ -118,7 +138,3 @@ def describe() -> dict[str, Path]:
     """All resolved locations, for diagnostics."""
     return {k: v for k, v in globals().items()
             if k.isupper() and isinstance(v, Path)}
-
-
-BP3D_CHECKSUMS: Path = BP3D_RAW / "checksums.sha256"
-BP3D_README: Path = BP3D_RAW / "README_e.html"
