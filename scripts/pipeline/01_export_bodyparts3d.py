@@ -1,17 +1,18 @@
 """
-export_bodyparts3d.py            (run in plain Python:  python export_bodyparts3d.py)
----------------------
+01_export_bodyparts3d.py         (plain Python:  python scripts/pipeline/01_export_bodyparts3d.py)
+------------------------
 BodyParts3D  ->  clean, optimized, Blender-ready PLY pieces + manifest.
 
-Needs (same folder):  anat_config.py  anat_helpers.py  anat_classes.py
-Requirements:         pip install numpy scipy fast-simplification   (fast-simplification optional)
+Inputs : data/raw/bodyparts3d/metadata/*.txt   and   data/interim/bodyparts3d/obj_*/**.obj
+Needs  : the medverse package (pip install -e ".[export]"  or just run from the repo)
 
 Division of labour:
     Human Brainnetome -> cerebral cortex
     BodyParts3D       -> everything else (this script)
 
-Writes  <OUTPUT_DIR>/meshes/<GROUP>/*.ply, manifest.json, reference/*.npz, report.txt
-All settings live in anat_config.py.
+Writes  data/interim/bodyparts3d/export_pieces/{meshes/<GROUP>/*.ply, manifest.json, reference/*.npz}
+        data/processed/reports/export_bodyparts3d_report.txt
+All settings live in medverse/anatomy/config.py, all paths in medverse/paths.py.
 """
 import os
 import sys
@@ -21,37 +22,49 @@ import importlib
 import collections
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Make `import medverse` work without `pip install -e .`
+# (also works inside Blender; if __file__ is undefined, set MEDVERSE_ROOT)
+# ---------------------------------------------------------------------------
+import sys as _sys
+import os as _os
+from pathlib import Path as _Path
 
-# ---------------------------------------------------------------------------
-# make the sibling modules importable (plain Python, IDE, or Blender Text Editor)
-# ---------------------------------------------------------------------------
-def _script_dir():
+
+def _bootstrap():
+    cands = []
+    if _os.environ.get("MEDVERSE_ROOT"):
+        cands.append(_Path(_os.environ["MEDVERSE_ROOT"]) / "src")
     try:
-        return os.path.dirname(os.path.abspath(__file__))
+        cands.append(_Path(__file__).resolve().parents[2] / "src")
     except NameError:
         pass
-    try:
-        import bpy
-        t = bpy.context.space_data.text
-        if t is not None and t.filepath:
-            return os.path.dirname(bpy.path.abspath(t.filepath))
-    except Exception:
-        pass
-    return os.getcwd()
+    for c in cands:
+        if (c / "medverse").is_dir():
+            if str(c) not in _sys.path:
+                _sys.path.insert(0, str(c))
+            return
 
 
-SCRIPT_DIR = _script_dir()        # <- set this by hand if the auto-detection ever fails
-if SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
+_bootstrap()
 
-import anat_config, anat_helpers, anat_classes          # noqa: E402
-for _m in (anat_config, anat_helpers, anat_classes):    # pick up edits without restarting the interpreter
-    importlib.reload(_m)
 
-from anat_config import *                               # noqa: E402,F401,F403
-from anat_helpers import *                              # noqa: E402,F401,F403
-from anat_helpers import fast_simplification            # noqa: E402
-from anat_classes import log, Metadata, MeshIndex, reset_state   # noqa: E402
+# ---------------------------------------------------------------------------
+# Import project modules
+# ---------------------------------------------------------------------------
+from medverse.anatomy import config as anat_config
+from medverse.anatomy import helpers as anat_helpers
+from medverse.anatomy import classes as anat_classes
+
+from medverse.anatomy.config import *  # noqa: E402,F401,F403
+from medverse.anatomy.helpers import *  # noqa: E402,F401,F403
+from medverse.anatomy.helpers import fast_simplification  # noqa: E402
+from medverse.anatomy.classes import (
+    log,
+    Metadata,
+    MeshIndex,
+    reset_state,
+)  # noqa: E402
 
 
 # ============================================================================
@@ -66,7 +79,7 @@ def main():
     if not os.path.isdir(BODYPARTS3D_BASE_PATH):
         log("[error] BODYPARTS3D_BASE_PATH does not exist")
         return 2
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    ensure_output_dirs()
 
     # ------------------------------------------------------------------ metadata
     files = find_metadata_files(BODYPARTS3D_BASE_PATH, METADATA_DIR)
@@ -115,7 +128,7 @@ def main():
 
     # ------------------------------------------------------------------ mesh files
     log.section("Mesh files")
-    obj_root = OBJ_SEARCH_DIR or BODYPARTS3D_BASE_PATH
+    obj_root = OBJ_SEARCH_DIR or BODYPARTS3D_BASE_PATH      # extracted OBJs live in data/interim
     index = MeshIndex(obj_root)
     log(f"{index.count} .obj files under {obj_root}")
     dups = sum(1 for v in index.by_stem.values() if len(v) > 1)
@@ -138,17 +151,17 @@ def main():
     def load_units(units):
         loaded = []
         for u in units:
-            paths = [index.find(s, u["hint"]) for s in u["stems"]]
-            if any(p is None for p in paths):
+            obj_files = [index.find(s, u["hint"]) for s in u["stems"]]
+            if any(p is None for p in obj_files):
                 missing_files.append(u)
                 continue
             vs, fs, off = [], [], 0
-            for p in paths:
+            for p in obj_files:
                 v, f = read_obj(p)
                 vs.append(v)
                 fs.append(f + off)
                 off += len(v)
-            u["paths"] = paths
+            u["paths"] = obj_files
             u["verts"] = np.concatenate(vs)
             u["faces"] = np.concatenate(fs)
             loaded.append(u)
@@ -160,7 +173,7 @@ def main():
         log(f"[MISSING FILE] {u['stems']} ({', '.join(r['label'] for r in u['recs'])})")
     if not loaded:
         log("[error] no meshes could be loaded. Check BODYPARTS3D_BASE_PATH / OBJ_SEARCH_DIR / MESH_SOURCE.")
-        log.save(os.path.join(OUTPUT_DIR, "report.txt"))
+        log.save(EXPORT_BP3D_REPORT_PATH)
         return 3
 
     def annotate(u):
@@ -407,7 +420,7 @@ def main():
     log(f"missing / not available: {missing if missing else 'none'}")
     log(f"ambiguous (excluded)   : {len(amb)}")
     log(f"output location        : {OUTPUT_DIR}")
-    log.save(os.path.join(OUTPUT_DIR, "report.txt"))
+    log.save(EXPORT_BP3D_REPORT_PATH)
     return 0
 
 
