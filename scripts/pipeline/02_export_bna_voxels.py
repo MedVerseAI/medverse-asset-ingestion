@@ -1,14 +1,14 @@
 """
-export_bna_voxels.py          (run in plain Python:  python scripts/export_bna_voxels.py)
---------------------
-STEP 1 of the pipeline: Human Brainnetome atlas  ->  one PLY mesh per region.
+02_export_bna_voxels.py       (plain Python:  python scripts/pipeline/02_export_bna_voxels.py)
+-----------------------
+STEP 2 of the pipeline: Human Brainnetome atlas  ->  one PLY mesh per region.
 
-Reads   data/HumanBrainnetome/nii_gz_data/BNA_MPM_thr25_1.25mm.nii.gz
+Reads   data/raw/brainnetome/atlas/BNA_MPM_thr25_1.25mm.nii.gz
         (a 3D grid of voxels; every voxel holds the id of the region it belongs to, 0 = background)
-        data/HumanBrainnetome/BN_Atlas_freesurfer/BN_Atlas_246_LUT.txt   (id -> name + colour)
+        data/raw/brainnetome/labels/BN_Atlas_246_LUT.txt   (id -> name + colour)
 
-Writes  outputs/voxel_export_pieces/<id:03d>_<name>.ply      (binary, closed surfaces, MNI millimetres)
-        outputs/reports/export_bna_voxels_report.txt
+Writes  data/interim/brainnetome/voxel_export_pieces/<id:03d>_<name>.ply   (binary, closed surfaces, MNI mm)
+        data/processed/reports/export_bna_voxels_report.txt
 
 How a region becomes a mesh:
     1. mask      : voxels of that region = 1, everything else = 0
@@ -21,7 +21,7 @@ How a region becomes a mesh:
     8. write PLY : with the LUT colour on every vertex
 
 Requirements:  pip install numpy scipy scikit-image nibabel
-All paths come from anat_config.py (inputs in data/, outputs in outputs/).
+All paths come from medverse/paths.py.
 """
 import os
 import sys
@@ -33,18 +33,43 @@ from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 
 # ---------------------------------------------------------------------------
-# make the sibling modules importable (plain Python, IDE, ...)
+# Make `import medverse` work without `pip install -e .`
+# (also works inside Blender; if __file__ is undefined, set MEDVERSE_ROOT)
 # ---------------------------------------------------------------------------
-try:
-    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-except NameError:
-    _SCRIPT_DIR = os.getcwd()
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+import sys as _sys
+import os as _os
+from pathlib import Path as _Path
 
-from anat_config import (BRAINNETOME_BASE_PATH, BN_NII_DIR, BN_LUT_PATH, BN_PIECES_DIR,   # noqa: E402
-                         REPORTS_DIR, ensure_output_dirs)
-from anat_classes import log, warn, reset_state                                           # noqa: E402
+
+def _bootstrap():
+    cands = []
+    if _os.environ.get("MEDVERSE_ROOT"):
+        cands.append(_Path(_os.environ["MEDVERSE_ROOT"]) / "src")
+    try:
+        cands.append(_Path(__file__).resolve().parents[2] / "src")
+    except NameError:
+        pass
+    for c in cands:
+        if (c / "medverse").is_dir():
+            if str(c) not in _sys.path:
+                _sys.path.insert(0, str(c))
+            return
+
+
+_bootstrap()
+
+# ---------------------------------------------------------------------------
+# Import project modules
+# ---------------------------------------------------------------------------
+from medverse.anatomy.config import (
+    BRAINNETOME_BASE_PATH,
+    BN_NII_DIR,
+    BN_LUT_PATH,
+    BN_PIECES_DIR,
+    EXPORT_BNA_REPORT_PATH,
+    ensure_output_dirs,
+)
+from medverse.anatomy.classes import log, warn, reset_state
 
 # ---------------------------------------------------------------------------
 # settings
@@ -199,7 +224,7 @@ def main():
         log(f"mean x of *_L regions = {xl:+.1f} mm, of *_R regions = {xr:+.1f} mm")
         if xl > xr:
             warn("left hemisphere lies at +x (LAS-like axes); the integration step will mirror x automatically")
-    log.save(os.path.join(REPORTS_DIR, "export_bna_voxels_report.txt"))
+    log.save(EXPORT_BNA_REPORT_PATH)
     return 0 if exported else 1
 
 
