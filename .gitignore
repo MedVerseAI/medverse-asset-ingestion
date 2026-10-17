@@ -1,5 +1,7 @@
 # Ignore all dataset files
 data/*
+!data/.gitkeep
+!data/README.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
