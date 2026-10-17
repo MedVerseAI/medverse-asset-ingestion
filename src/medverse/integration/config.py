@@ -18,5 +18,5 @@ import math
 import collections
 import numpy as np
 
-from anat_config import *                                   # noqa: F401,F403
-from anat_classes import log, WARNINGS, warn, reset_state   # noqa: F401
+from medverse.anatomy.config import *  # noqa: F401,F403
+from medverse.anatomy.classes import log, WARNINGS, warn, reset_state  # noqa: F401

@@ -8,8 +8,8 @@ import json
 import math
 import collections
 import numpy as np
-from integration_config import *
-from integration_geometry import *
+from medverse.integration.config import *
+from medverse.integration.geometry import *
 
 # ============================================================================
 # DATASET LOADING / VALIDATION

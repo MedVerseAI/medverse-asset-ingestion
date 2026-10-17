@@ -18,8 +18,7 @@ import re
 import math
 import collections
 import numpy as np
-
-from anat_config import *      # noqa: F401,F403  (settings + regex rules)
+from medverse.anatomy.config import *  # noqa: F401,F403
 
 try:                            # Blender only
     import bpy
@@ -809,7 +808,7 @@ def make_material(name, rgba, roughness=0.55):
         bsdf.inputs["Roughness"].default_value = roughness
         nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
     except Exception as exc:                               # never fail the build because of shading
-        from anat_classes import log                       # lazy import (avoids a circular import)
+        from medverse.anatomy.classes import log                       # lazy import (avoids a circular import)
         log(f"[info] node material for {name} not created ({exc}); using viewport color only")
     mat.diffuse_color = rgba
     return mat

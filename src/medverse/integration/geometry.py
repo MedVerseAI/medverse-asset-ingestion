@@ -8,7 +8,7 @@ import json
 import math
 import collections
 import numpy as np
-from integration_config import *
+from medverse.integration.config import *
 
 _PLY_TYPES = {"char": "i1", "uchar": "u1", "int8": "i1", "uint8": "u1", "short": "<i2", "ushort": "<u2",
               "int16": "<i2", "uint16": "<u2", "int": "<i4", "uint": "<u4", "int32": "<i4", "uint32": "<u4",

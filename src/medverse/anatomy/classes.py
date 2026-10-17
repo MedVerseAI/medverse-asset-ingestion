@@ -14,8 +14,8 @@ Pure python + anat_helpers/anat_config (no bpy needed).
 import os
 import collections
 
-from anat_config import *                       # noqa: F401,F403
-from anat_helpers import read_tsv
+from medverse.anatomy.config import *  # noqa: F401,F403
+from medverse.anatomy.helpers import read_tsv
 
 
 # ============================================================================
