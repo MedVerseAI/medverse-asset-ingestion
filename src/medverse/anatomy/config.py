@@ -1,61 +1,81 @@
 """
-anat_config.py
---------------
-ALL settings / constants / regex rules for the two pipelines in ONE place.
-Edit the two base paths below; everything else is optional.
+medverse/anatomy/config.py
+--------------------------
+ALL settings / constants / regex rules for the pipelines in ONE place.
+Locations are NOT defined here: they come from medverse.paths.
 
-Used by:  anat_helpers.py, anat_classes.py, export_bodyparts3d.py, integrate_brainnetome_bodyparts3d.py
+Used by:  medverse.anatomy.helpers / classes, medverse.integration.*,
+          scripts/pipeline/01_*.py, 02_*.py, 03_*.py
 (pure python, no bpy / numpy needed)
 """
-import os
 import re
 import collections
 
-# ============================================================================
-# PATHS  (the only two things you normally have to edit)
-# ============================================================================
-# Project root = parent of the "scripts" folder. Override with env var ANAT_PROJECT_ROOT
-# (useful when running from Blender's text editor where __file__ is not the script path).
-try:
-    _HERE = os.path.dirname(os.path.abspath(__file__))
-except NameError:
-    _HERE = os.getcwd()
-PROJECT_ROOT = os.environ.get("ANAT_PROJECT_ROOT") or os.path.dirname(_HERE)
+from medverse import paths
 
-# ---- INPUTS: read-only, everything lives under data/ ----
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
-BRAINNETOME_BASE_PATH = os.path.join(DATA_DIR, "HumanBrainnetome")
-BODYPARTS3D_BASE_PATH = os.path.join(DATA_DIR, "BodyParts3D")
-BN_NII_DIR = os.path.join(BRAINNETOME_BASE_PATH, "nii_gz_data")
-BN_LUT_PATH = os.path.join(BRAINNETOME_BASE_PATH, "BN_Atlas_freesurfer", "BN_Atlas_246_LUT.txt")
+# ============================================================================
+# PATHS  (all derived from medverse.paths, the single source of truth)
+# ============================================================================
+# The plain-string names below are kept so the pipeline scripts and the
+# integration modules can use `from ... import *`.  Do NOT hard-code paths here.
 
-# ---- OUTPUTS: everything generated is written under outputs/ ----
-OUTPUTS_DIR = os.path.join(PROJECT_ROOT, "outputs")
-BN_PIECES_DIR = os.path.join(OUTPUTS_DIR, "voxel_export_pieces")     # Brainnetome PLY pieces
-OUTPUT_DIR = os.path.join(OUTPUTS_DIR, "bp3d_export_pieces")         # BodyParts3D meshes + manifest.json
+PROJECT_ROOT = str(paths.ROOT)
+DATA_DIR = str(paths.DATA)
+
+# ---- INPUTS ----
+BRAINNETOME_BASE_PATH = str(paths.BN_RAW)
+BODYPARTS3D_BASE_PATH = str(paths.BP3D_RAW)
+
+BN_NII_DIR = str(paths.BN_ATLAS)          # folder holding BNA_MPM_thr25_1.25mm.nii.gz
+BN_MPM_PATH = str(paths.BN_MPM)
+BN_LUT_PATH = str(paths.BN_LUT)
+
+# ---- OUTPUTS ----
+OUTPUTS_DIR = str(paths.PROCESSED)
+BN_PIECES_DIR = str(paths.BN_PIECES_DIR)              # interim: Brainnetome PLY pieces
+OUTPUT_DIR = str(paths.BP3D_EXPORT_DIR)               # interim: BodyParts3D PLY pieces + manifest
 BP3D_EXPORT_DIR = OUTPUT_DIR
-REPORTS_DIR = os.path.join(OUTPUTS_DIR, "reports")                   # log / report .txt files
-FINAL_DIR = os.path.join(OUTPUTS_DIR, "final")                       # final .blend / exports
+REPORTS_DIR = str(paths.REPORTS)
+FINAL_DIR = str(paths.FINAL)
+
+EXPORT_BP3D_REPORT_PATH = str(paths.EXPORT_BP3D_REPORT)
+EXPORT_BNA_REPORT_PATH = str(paths.EXPORT_BNA_REPORT)
+INTEGRATION_REPORT_PATH = str(paths.INTEGRATION_REPORT)
+FINAL_BLEND_PATH = str(paths.FINAL_BLEND)
 
 
 def ensure_output_dirs():
-    """Create every output folder (call at the start of each pipeline)."""
-    for d in (OUTPUTS_DIR, BN_PIECES_DIR, OUTPUT_DIR, REPORTS_DIR, FINAL_DIR):
-        os.makedirs(d, exist_ok=True)
+    """Create every output folder (call at the start of each pipeline step)."""
+    paths.ensure_output_dirs()
 
 
 def check_inputs():
-    """Return a list of missing input paths (empty list = all good)."""
-    need = [BRAINNETOME_BASE_PATH, BODYPARTS3D_BASE_PATH, BN_LUT_PATH]
-    return [p for p in need if not os.path.exists(p)]
+    """Inputs of steps 01 + 02 (raw data + extracted OBJ files). Returns missing paths."""
+    need = [
+        paths.BN_RAW,
+        paths.BP3D_RAW,
+        paths.BP3D_METADATA,
+        paths.BP3D_INTERIM,
+        paths.BN_LUT,
+        paths.BN_MPM,
+    ]
+    return [str(p) for p in need if not p.exists()]
+
+
+def check_integration_inputs():
+    """Inputs of step 03 (outputs of steps 01 + 02). Returns missing paths."""
+    need = [paths.BN_PIECES_DIR, paths.BP3D_EXPORT_MANIFEST]
+    return [str(p) for p in need if not p.exists()]
+
 
 # ============================================================================
 # EXPORT_BODYPARTS3D  --  selection / geometry / frame inference
 # ============================================================================
-# Folder holding the six metadata .txt files. None -> searched recursively under the base path.
-METADATA_DIR = None
-# Where the .obj meshes live. None -> whole base path is scanned recursively.
-OBJ_SEARCH_DIR = None
+# Folder holding the six metadata .txt files (data/raw/bodyparts3d/metadata).
+METADATA_DIR = str(paths.BP3D_METADATA)
+# Where the extracted .obj meshes live (data/interim/bodyparts3d: obj_isa + obj_partof).
+# NOTE: NOT the raw folder, which only holds the original ZIP archives.
+OBJ_SEARCH_DIR = str(paths.BP3D_INTERIM)
 
 # "element": one mesh per element file (FJxxxx.obj)   <- preferred, finest control
 # "concept": one mesh per concept representation (BPxxxx.obj)
@@ -197,6 +217,13 @@ CENTER_ON = "model_bbox"          # "model_bbox" | "cortex_bbox"
 BLENDER_UNITS_PER_MM = 0.001
 CLEAR_PREVIOUS_MODEL = True
 SET_SOLID_MATERIAL_VIEWPORT = True
+
+# --- final .blend: what you see when you open it -----------------------------------
+CLEAN_SCENE_FOR_FINAL_BLEND = True   # delete the default cube / camera / light and everything that is not the model
+VIEWPORT_SHADING = "SOLID"           # "SOLID" (fast, colours from the materials) | "MATERIAL" (material preview)
+HIDE_VIEWPORT_GRID = True            # hide the floor grid and the axis lines
+VIEW_EULER_DEG = (80.0, 0.0, 155.0)  # view direction: (80, 0, 180) = straight from the front (face towards you)
+VIEW_DISTANCE_FACTOR = 3.2           # camera distance = model size x this factor (bigger = further away)
 
 # --- guards -----------------------------------------------------------------------
 MUSCLE_GUARD_RX = re.compile(r"\bmuscle|muscul(?!oskeletal)|myocardi|sphincter|diaphragm")
