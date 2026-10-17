@@ -1,68 +1,57 @@
-"""Blender entry point for Brainnetome + BodyParts3D integration.
+"""
+03_integrate_brainnetome_bodyparts3d.py
+---------------------------------------
+Blender entry point for Brainnetome + BodyParts3D integration (STEP 3).
 
-Run this file from Blender 4.0+ after the two dataset exports are ready.
+Run from a terminal:
+    blender --background --python scripts/pipeline/03_integrate_brainnetome_bodyparts3d.py
+or from Blender's Text Editor (then set the MEDVERSE_ROOT environment variable first).
+
+Needs the outputs of step 01 and step 02 (they are independent of each other).
+Writes data/processed/final/anatomical_model.blend and data/processed/reports/integration_report.txt
 The pipeline algorithms and scene-building function bodies are preserved.
 """
 import os
-import sys
 import re
 import json
 import math
 import collections
 import numpy as np
 import bpy
+import mathutils
 
-# ----------------------------------------------------------------------------
-# Make the sibling modules (anat_config.py, ...) importable.
-# Blender's Text Editor often gives a useless __file__, so we try several places and pick the first
-# folder that really contains anat_config.py.
-# If everything fails, set MANUAL_SCRIPT_DIR below to your scripts folder.
-# ----------------------------------------------------------------------------
-MANUAL_SCRIPT_DIR = r"E:\Programs\blender\data\final_3D\V0.4\brainnetome_bodyparts3d_project\scripts"
+# ---------------------------------------------------------------------------
+# Make `import medverse` work without `pip install -e .`
+# (also works inside Blender; if __file__ is undefined, set MEDVERSE_ROOT)
+# ---------------------------------------------------------------------------
+import sys as _sys
+import os as _os
+from pathlib import Path as _Path
 
 
-def _find_script_dir():
+def _bootstrap():
     cands = []
-    root = os.environ.get("ANAT_PROJECT_ROOT")
-    if root:
-        cands.append(os.path.join(root, "scripts"))
+    if _os.environ.get("MEDVERSE_ROOT"):
+        cands.append(_Path(_os.environ["MEDVERSE_ROOT"]) / "src")
     try:
-        cands.append(os.path.dirname(os.path.abspath(__file__)))
+        cands.append(_Path(__file__).resolve().parents[2] / "src")
     except NameError:
         pass
-    try:                                                   # script opened from a file in the Text Editor
-        t = bpy.context.space_data.text
-        if t is not None and t.filepath:
-            cands.append(os.path.dirname(bpy.path.abspath(t.filepath)))
-    except Exception:
-        pass
-    if bpy.data.filepath:                                  # relative to the saved .blend
-        d = os.path.dirname(bpy.data.filepath)
-        cands += [d, os.path.join(d, "scripts"), os.path.join(os.path.dirname(d), "scripts")]
-    cands.append(MANUAL_SCRIPT_DIR)
     for c in cands:
-        if c and os.path.isfile(os.path.join(c, "anat_config.py")):
-            return c
-    raise ModuleNotFoundError(
-        "anat_config.py not found. Tried:\n  " + "\n  ".join(str(c) for c in cands) +
-        "\nSet MANUAL_SCRIPT_DIR at the top of this file to your scripts folder.")
+        if (c / "medverse").is_dir():
+            if str(c) not in _sys.path:
+                _sys.path.insert(0, str(c))
+            return
 
 
-_SCRIPT_DIR = _find_script_dir()
-if _SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, _SCRIPT_DIR)
+_bootstrap()
 
-# Blender keeps imported modules alive between runs: reload them so edits to the config files are picked up.
-import importlib
-import anat_config, anat_helpers, anat_classes                         # noqa: E402
-import integration_config, integration_geometry, integration_data      # noqa: E402
-for _m in (anat_config, anat_helpers, anat_classes,
-           integration_config, integration_geometry, integration_data):
-    importlib.reload(_m)
-
-from integration_config import *
-from integration_geometry import *
-from integration_data import *
+# ----------------------------------------------------------------------------
+# Import project modules
+# ----------------------------------------------------------------------------
+from medverse.integration.config import *
+from medverse.integration.geometry import *
+from medverse.integration.data import *
 
 # ============================================================================
 # BLENDER HELPERS
@@ -439,6 +428,62 @@ Combines pipeline statistics, registration results, and scene validation informa
         log("none")
     txt = bpy.data.texts.new("ANATOMICAL_MODEL_REPORT")
     txt.write("\n".join(log.lines))
+    txt.use_fake_user = True                                  # keep the report in the saved .blend
+
+
+# -----------------------------------------------------------------------------
+# Remove everything that is not the generated model (default cube / camera / light ...).
+# -----------------------------------------------------------------------------
+def collection_tree(coll):
+    """Return `coll` and all its descendant collections."""
+    out = [coll]
+    for ch in coll.children:
+        out.extend(collection_tree(ch))
+    return out
+
+
+def purge_scene_except_model(root_coll):
+    """Delete every object / collection / data block that does not belong to the model.
+
+Leaves the saved .blend with ONLY the anatomical model (no default cube, camera or light)."""
+    if not CLEAN_SCENE_FOR_FINAL_BLEND:
+        return
+    log.section("Cleaning the scene (only the anatomical model is kept)")
+    keep_objs = {o.name for o in model_objects(root_coll)}
+    keep_colls = {c.name for c in collection_tree(root_coll)}
+    removed = []
+    for o in list(bpy.data.objects):
+        if o.name not in keep_objs:
+            removed.append(o.name)
+            bpy.data.objects.remove(o, do_unlink=True)
+    for c in list(bpy.data.collections):
+        if c.name not in keep_colls:
+            removed.append(f"[collection] {c.name}")
+            bpy.data.collections.remove(c)
+    try:                                                      # Blender 4.2+
+        bpy.data.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+    except Exception:
+        try:
+            bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+        except Exception as exc:
+            warn(f"could not purge orphan data: {exc}")
+    log(f"removed {len(removed)} non-model item(s): {removed}")
+    left = [o.name for o in bpy.data.objects if o.name not in keep_objs]
+    if left:
+        warn(f"objects still outside the model: {left}")
+
+
+def model_bbox(root_coll):
+    """World-space (min, max) of all model meshes, in Blender units."""
+    pts = []
+    for o in model_objects(root_coll):
+        if o.type != "MESH":
+            continue
+        mw = np.array(o.matrix_world)
+        corners = np.array([list(c) for c in o.bound_box])
+        pts.append(corners @ mw[:3, :3].T + mw[:3, 3])
+    allp = np.concatenate(pts)
+    return allp.min(axis=0), allp.max(axis=0)
 
 
 # -----------------------------------------------------------------------------
@@ -446,19 +491,56 @@ Combines pipeline statistics, registration results, and scene validation informa
 # Parameters / return behavior: see the unchanged function signature and body.
 # Configures the Blender viewport state required by the existing pipeline without changing anatomical geometry.
 # -----------------------------------------------------------------------------
-def setup_viewport():
+def setup_viewport(root_coll=None):
     """Apply the pipeline viewport setup used for the generated anatomical scene.
 
-Configures the Blender viewport state required by the existing pipeline without changing anatomical geometry."""
+Sets shading / clipping and points every 3D viewport at the model, so the saved .blend opens
+directly on the model. Works in --background mode too (it edits every screen stored in the file)."""
     if not SET_SOLID_MATERIAL_VIEWPORT:
         return
+    center, size = np.zeros(3), 1.0
+    if root_coll is not None:
+        try:
+            bpy.context.view_layer.update()
+            lo, hi = model_bbox(root_coll)
+            center, size = (lo + hi) / 2.0, float(np.max(hi - lo))
+        except Exception as exc:
+            warn(f"could not compute the model bounding box for the viewport: {exc}")
+    rot = mathutils.Euler(tuple(math.radians(a) for a in VIEW_EULER_DEG), "XYZ").to_quaternion()
+    n_views = 0
     try:
-        for area in bpy.context.screen.areas:
-            if area.type == "VIEW_3D":
-                sp = area.spaces.active
-                sp.shading.type = "MATERIAL"
-                sp.clip_start = 0.001
-                sp.clip_end = 100.0
+        for screen in bpy.data.screens:                       # not bpy.context.screen: it is None in --background
+            for area in screen.areas:
+                if area.type != "VIEW_3D":
+                    continue
+                for sp in area.spaces:
+                    if sp.type != "VIEW_3D":
+                        continue
+                    sp.shading.type = VIEWPORT_SHADING
+                    if VIEWPORT_SHADING == "SOLID":
+                        sp.shading.color_type = "MATERIAL"    # use each material's viewport colour
+                    sp.clip_start = 0.001
+                    sp.clip_end = 100.0
+                    if HIDE_VIEWPORT_GRID:
+                        sp.overlay.show_floor = False
+                        sp.overlay.show_axis_x = False
+                        sp.overlay.show_axis_y = False
+                        sp.overlay.show_axis_z = False
+                    r3d = sp.region_3d
+                    if r3d is not None:
+                        r3d.view_perspective = "PERSP"
+                        r3d.view_location = tuple(center.tolist())
+                        r3d.view_rotation = rot
+                        r3d.view_distance = max(size * VIEW_DISTANCE_FACTOR, 0.05)
+                    n_views += 1
+        log(f"viewport set in {n_views} 3D view(s): shading {VIEWPORT_SHADING}, "
+            f"look-at {np.round(center, 4).tolist()}, distance {size * VIEW_DISTANCE_FACTOR:.2f}")
+    except Exception as exc:
+        warn(f"viewport setup failed: {exc}")
+    try:                                                      # nothing selected / active when the file opens
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        bpy.context.view_layer.objects.active = None
     except Exception:
         pass
 
@@ -475,10 +557,10 @@ def main():
     """Run the complete Brainnetome + BodyParts3D integration pipeline.
 
 Loads both anatomical sources, registers them, builds the Blender scene, audits the result,
-writes the final report and saves everything under outputs/ (reports/ and final/)."""
+writes the final report and saves everything under data/processed/ (reports/ and final/)."""
     reset_state()
     ensure_output_dirs()
-    missing_inputs = check_inputs()
+    missing_inputs = check_integration_inputs()
     if missing_inputs:
         raise FileNotFoundError(f"missing input path(s): {missing_inputs}")
     log.section("Brainnetome + BodyParts3D integration")
@@ -486,14 +568,15 @@ writes the final report and saves everything under outputs/ (reports/ and final/
     bp = load_bodyparts3d()
     place = compute_placement(bn, bp)
     root_obj, root_coll, _ = build_scene(bn, bp, place)
+    purge_scene_except_model(root_coll)
     audit_scene(root_coll)
     geometry_report(bn, bp, place)
     final_report(root_obj, root_coll, place, bn, bp)
-    setup_viewport()
+    setup_viewport(root_coll)
 
-    # ---- save outputs (everything generated goes under outputs/) ----
-    report_path = os.path.join(REPORTS_DIR, "integration_report.txt")
-    blend_path = os.path.join(FINAL_DIR, "anatomical_model.blend")
+    # ---- save outputs (everything generated goes under data/processed/) ----
+    report_path = INTEGRATION_REPORT_PATH
+    blend_path = FINAL_BLEND_PATH
     log("\nDone. Full report: Text Editor -> ANATOMICAL_MODEL_REPORT (also stored on the root empty).")
     log(f"report saved : {report_path}")
     log(f"blend saved  : {blend_path}")
