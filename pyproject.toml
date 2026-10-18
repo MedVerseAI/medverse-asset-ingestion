@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medverse"
+version = "0.1.0"
+description = "Data ingestion and 3D asset processing pipeline (BodyParts3D + Human Brainnetome)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+# Core: needed by steps 01 and 02 (plain Python). Blender ships its own numpy.
+dependencies = [
+    "numpy",
+    "scipy",
+    "nibabel",
+    "scikit-image",
+]
+
+[project.optional-dependencies]
+export = ["fast-simplification"]   # optional mesh decimation in step 01
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

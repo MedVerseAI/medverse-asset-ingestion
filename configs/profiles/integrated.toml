@@ -1,0 +1,4 @@
+# Profile: integrated
+# Brainnetome cortex + BodyParts3D brain parts and spine, registered together. Needs: steps 01 + 02.
+[model]
+mode = "integrated"
