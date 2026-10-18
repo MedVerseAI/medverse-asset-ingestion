@@ -15,8 +15,11 @@ docs/
 │   ├── sources_and_licensing.md       Upstream sources, licenses, attribution, citations
 │   ├── download_and_layout.md         How to get the files, where they go, how to verify them
 │   └── data_dictionary.md             Columns, keys, counts and pitfalls of the input tables
-└── ontology/
-    └── foundational_model.md          How FMA, BP and FJ identifiers relate to each other
+├── ontology/
+│   └── foundational_model.md          How FMA, BP and FJ identifiers relate to each other
+└── pipeline/
+    ├── processing_pipeline.md         Steps 01 / 02 / 03, inputs and outputs
+    └── configuration.md               Build modes (brainnetome / bodyparts3d / integrated) and the TOML config
 ```
 
 | Document | Read it when you need to... |
