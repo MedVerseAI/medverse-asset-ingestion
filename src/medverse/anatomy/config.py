@@ -12,6 +12,13 @@ import re
 import collections
 
 from medverse import paths
+from medverse import settings as _settings
+
+# User settings (configs/*.toml) are loaded first because the output file names depend on the mode.
+# The tunable constants below are the built-in fallbacks; `_settings.apply(globals())` at the very
+# bottom of this module overrides them with the validated values from the TOML files.
+SETTINGS = _settings.get()
+MODE = SETTINGS.mode
 
 # ============================================================================
 # PATHS  (all derived from medverse.paths, the single source of truth)
@@ -40,8 +47,8 @@ FINAL_DIR = str(paths.FINAL)
 
 EXPORT_BP3D_REPORT_PATH = str(paths.EXPORT_BP3D_REPORT)
 EXPORT_BNA_REPORT_PATH = str(paths.EXPORT_BNA_REPORT)
-INTEGRATION_REPORT_PATH = str(paths.INTEGRATION_REPORT)
-FINAL_BLEND_PATH = str(paths.FINAL_BLEND)
+INTEGRATION_REPORT_PATH = str(paths.integration_report_for(MODE))
+FINAL_BLEND_PATH = str(paths.final_blend_for(MODE))
 
 
 def ensure_output_dirs():
@@ -49,22 +56,25 @@ def ensure_output_dirs():
     paths.ensure_output_dirs()
 
 
-def check_inputs():
-    """Inputs of steps 01 + 02 (raw data + extracted OBJ files). Returns missing paths."""
-    need = [
-        paths.BN_RAW,
-        paths.BP3D_RAW,
-        paths.BP3D_METADATA,
-        paths.BP3D_INTERIM,
-        paths.BN_LUT,
-        paths.BN_MPM,
-    ]
+def check_inputs(settings=None):
+    """Inputs of steps 01 + 02 that the selected mode needs. Returns missing paths."""
+    s = settings or SETTINGS
+    need = []
+    if s.use_bodyparts3d:
+        need += [paths.BP3D_RAW, paths.BP3D_METADATA, paths.BP3D_INTERIM]
+    if s.use_brainnetome:
+        need += [paths.BN_RAW, paths.BN_LUT, paths.BN_MPM]
     return [str(p) for p in need if not p.exists()]
 
 
-def check_integration_inputs():
-    """Inputs of step 03 (outputs of steps 01 + 02). Returns missing paths."""
-    need = [paths.BN_PIECES_DIR, paths.BP3D_EXPORT_MANIFEST]
+def check_integration_inputs(settings=None):
+    """Inputs of step 03 (outputs of steps 01 / 02) that the selected mode needs. Returns missing paths."""
+    s = settings or SETTINGS
+    need = []
+    if s.use_brainnetome:
+        need.append(paths.BN_PIECES_DIR)
+    if s.use_bodyparts3d:
+        need.append(paths.BP3D_EXPORT_MANIFEST)
     return [str(p) for p in need if not p.exists()]
 
 
@@ -102,6 +112,7 @@ FACE_BUDGET = {
     "SUBCORTICAL_STRUCTURES": 40000,
     "OTHER_BRAIN_STRUCTURES": 40000,
     "CRANIAL_NERVES": 20000,
+    "CEREBRAL_CORTEX": 60000,
 }
 DECIMATION_AGGRESSIVENESS = 5
 MAX_BBOX_DRIFT_MM = 1.0
@@ -115,7 +126,8 @@ SPINAL_CORD_MIN_WIDTH_MM = 5.0
 
 # --- classification rules (matched against lower-case concept names) ---------------
 GROUP_ORDER = ["CEREBELLUM", "BRAINSTEM", "SUBCORTICAL_STRUCTURES", "OTHER_BRAIN_STRUCTURES",
-               "CRANIAL_NERVES", "VERTEBRAE", "INTERVERTEBRAL_DISCS", "SPINAL_CORD"]
+               "CRANIAL_NERVES", "VERTEBRAE", "INTERVERTEBRAL_DISCS", "SPINAL_CORD",
+               "CEREBRAL_CORTEX"]          # last one: BodyParts3D's own cortex, mode "bodyparts3d" only
 
 MUSCLE_ROOT_NAMES = {"muscle organ"}
 MUSCLE_NAME_RX = re.compile(r"\bmuscle|muscul(?!oskeletal)|myocardi|sphincter|diaphragm")
@@ -243,6 +255,7 @@ GROUP_TO_COLLECTIONS = {              # manifest group -> (system, collection)
     "INTERVERTEBRAL_DISCS": ("SPINAL_SYSTEM", "INTERVERTEBRAL_DISCS"),
     "SPINAL_CORD": ("SPINAL_SYSTEM", "SPINAL_CORD"),
     "SPINAL_NERVES": ("SPINAL_SYSTEM", "SPINAL_NERVES"),
+    "CEREBRAL_CORTEX": ("BRAIN", "CEREBRAL_CORTEX_BODYPARTS3D"),
 }
 BP3D_COLORS = {
     ("VERTEBRAE", None): (0.86, 0.82, 0.70, 1.0),
@@ -255,5 +268,11 @@ BP3D_COLORS = {
     ("OTHER_BRAIN_STRUCTURES", "white_matter"): (0.92, 0.91, 0.86, 1.0),
     ("OTHER_BRAIN_STRUCTURES", "ventricular_system"): (0.35, 0.60, 0.90, 1.0),
     ("CRANIAL_NERVES", None): (0.95, 0.80, 0.30, 1.0),
+    ("CEREBRAL_CORTEX", None): (0.80, 0.62, 0.60, 1.0),
 }
 MATERIAL_PREFIX = "ANAT_"
+
+# ============================================================================
+# USER SETTINGS  (configs/default.toml + overrides)  -- must stay the LAST statement
+# ============================================================================
+_settings.apply(globals())
