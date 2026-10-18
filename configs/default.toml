@@ -1,0 +1,112 @@
+# =============================================================================
+# MedVerse pipeline configuration  --  DEFAULTS (do not put personal changes here)
+# =============================================================================
+# Resolution order (later wins):
+#   1. configs/default.toml            this file, every key must exist here
+#   2. configs/local.toml              optional, personal, git-ignored
+#   3. --config <file|profile-name>    or env MEDVERSE_CONFIG
+#   4. --mode <name>                   or env MEDVERSE_MODE
+#
+# Typical use:
+#   python scripts/run_pipeline.py --mode brainnetome
+#   python scripts/run_pipeline.py --config configs/profiles/bodyparts3d.toml
+#   blender --background --python scripts/pipeline/03_integrate_brainnetome_bodyparts3d.py -- --mode integrated
+#
+# Unknown keys or wrong types raise an error (typos never fail silently).
+# =============================================================================
+
+[model]
+# What the final .blend contains:
+#   "brainnetome"  : cerebral cortex only (Brainnetome, 210 cortical regions)
+#   "bodyparts3d"  : BodyParts3D only: brain parts + spine + BodyParts3D's own cerebral cortex
+#   "integrated"   : Brainnetome cortex + BodyParts3D brain parts + spine, registered together
+mode = "integrated"
+
+[blender]
+# Blender executable used by scripts/run_pipeline.py ("" = $BLENDER env var, then "blender" on PATH).
+executable = ""
+
+# -----------------------------------------------------------------------------
+# Human Brainnetome atlas  (modes: brainnetome, integrated)
+# -----------------------------------------------------------------------------
+[brainnetome]
+cortical_max_id = 210        # ids 1..210 cortical; 211+ subcortical (never imported, used as landmarks only)
+region_gap_scale = 1.0       # 0.96 = visible gaps between regions, 1.0 = watertight neighbours
+smooth_sigma = 0.8           # step 02: Gaussian blur before meshing (0 = blocky voxels)
+min_voxels = 10              # step 02: regions smaller than this are skipped
+expected_regions = 246       # step 02: sanity check
+mpm_filename = "BNA_MPM_thr25_1.25mm.nii.gz"
+
+# -----------------------------------------------------------------------------
+# BodyParts3D  (modes: bodyparts3d, integrated)
+# -----------------------------------------------------------------------------
+[bodyparts3d]
+mesh_source = "auto"                     # "element" | "concept" | "auto"
+include_cortex = true                    # only used in mode "bodyparts3d": export BP3D's own cerebral cortex
+                                         # (in mode "integrated" the cortex always comes from Brainnetome)
+include_ventricular_system = true
+include_cerebral_white_matter = true
+include_cranial_nerves = false
+ambiguous_include_patterns = ["^(left |right )?hippocampus$"]
+
+# Which groups reach the model. Remove a name to drop that whole group
+# (e.g. delete "VERTEBRAE", "INTERVERTEBRAL_DISCS", "SPINAL_CORD" for a brain-only model).
+enabled_groups = [
+    "CEREBELLUM", "BRAINSTEM", "SUBCORTICAL_STRUCTURES", "OTHER_BRAIN_STRUCTURES", "CRANIAL_NERVES",
+    "VERTEBRAE", "INTERVERTEBRAL_DISCS", "SPINAL_CORD",
+    "CEREBRAL_CORTEX",       # only has an effect in mode "bodyparts3d"
+]
+
+# geometry cleaning / decimation
+weld_tolerance_mm = 0.001
+component_min_fraction = 0.005
+component_min_faces = 50
+default_face_budget = 50000
+decimation_aggressiveness = 5
+max_bbox_drift_mm = 1.0
+reference_point_count = 30000
+
+[bodyparts3d.face_budget]
+VERTEBRAE = 80000
+INTERVERTEBRAL_DISCS = 12000
+SPINAL_CORD = 60000
+CEREBELLUM = 120000
+BRAINSTEM = 80000
+SUBCORTICAL_STRUCTURES = 40000
+OTHER_BRAIN_STRUCTURES = 40000
+CRANIAL_NERVES = 20000
+CEREBRAL_CORTEX = 60000
+
+# -----------------------------------------------------------------------------
+# Registration Brainnetome -> BodyParts3D  (mode: integrated only)
+# -----------------------------------------------------------------------------
+[registration]
+scale_mode = "fit_inside"                # "fit_inside" | "match_mean"
+use_icp = true
+sample_points = 6000
+icp_iterations = 40
+icp_trim_fraction = 0.75
+icp_scale_bounds = [0.85, 1.15]
+max_rotation_deg = 20.0
+hard_scale_limits = [0.7, 1.5]
+manual_scale = 0.0                       # 0 = automatic
+manual_translation_mm = [0.0, 0.0, 0.0]
+manual_rotation_deg = [0.0, 0.0, 0.0]
+
+# -----------------------------------------------------------------------------
+# Blender scene
+# -----------------------------------------------------------------------------
+[scene]
+root_name = "ANATOMICAL_MODEL"
+units_per_mm = 0.001                     # 1 Blender unit = 1 m
+orient_model_to_atlas = true             # integrated: express BodyParts3D in the atlas axes
+center_on = "model_bbox"                 # "model_bbox" | "cortex_bbox"
+clear_previous_model = true
+clean_scene_for_final_blend = true       # delete default cube / camera / light
+
+[viewport]
+enabled = true
+shading = "SOLID"                        # "SOLID" | "MATERIAL"
+hide_grid = true
+euler_deg = [80.0, 0.0, 155.0]           # (80, 0, 180) = straight from the front
+distance_factor = 3.2

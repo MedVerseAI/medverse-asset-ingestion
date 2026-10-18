@@ -1,0 +1,4 @@
+# Profile: bodyparts3d
+# BodyParts3D only: brain parts + spine + BodyParts3D cerebral cortex. Needs: step 01.
+[model]
+mode = "bodyparts3d"

@@ -21,6 +21,8 @@ Layout (see docs/data/download_and_layout.md)
 data/raw/        original downloads, never modified
 data/interim/    extracted / intermediate files
 data/processed/  final outputs (.blend model) and reports
+
+Pipeline configuration (TOML) lives in <root>/configs, see medverse.settings.
 """
 
 from __future__ import annotations
@@ -66,6 +68,16 @@ DATA: Path = Path(
 RAW: Path = DATA / "raw"
 INTERIM: Path = DATA / "interim"
 PROCESSED: Path = DATA / "processed"
+
+
+# --------------------------------------------------------------------------
+# Pipeline configuration (see medverse.settings)
+# --------------------------------------------------------------------------
+
+CONFIGS: Path = ROOT / "configs"
+DEFAULT_CONFIG: Path = CONFIGS / "default.toml"
+LOCAL_CONFIG: Path = CONFIGS / "local.toml"       # optional, personal, git-ignored
+PROFILES: Path = CONFIGS / "profiles"
 
 
 # --------------------------------------------------------------------------
@@ -128,6 +140,16 @@ INTEGRATION_REPORT: Path = REPORTS / "integration_report.txt"
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+
+def final_blend_for(mode: str) -> Path:
+    """Final .blend of a pipeline mode. The integrated model keeps the historical file name."""
+    return FINAL_BLEND if mode == "integrated" else FINAL / f"anatomical_model_{mode}.blend"
+
+
+def integration_report_for(mode: str) -> Path:
+    """Step-03 report of a pipeline mode. The integrated run keeps the historical file name."""
+    return INTEGRATION_REPORT if mode == "integrated" else REPORTS / f"integration_report_{mode}.txt"
+
 
 def bp3d_obj_dir(tree: str) -> Path:
     """Return the folder containing the FJxxxx.obj files of one tree.

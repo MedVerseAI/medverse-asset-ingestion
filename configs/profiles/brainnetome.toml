@@ -1,0 +1,4 @@
+# Profile: brainnetome
+# Cerebral cortex only (Brainnetome, 210 regions). Needs: step 02.
+[model]
+mode = "brainnetome"

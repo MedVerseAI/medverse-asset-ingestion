@@ -1,0 +1,11 @@
+# Copy to configs/local.toml (git-ignored) for personal settings.
+# Only list the keys you want to change; everything else comes from default.toml.
+[model]
+mode = "integrated"
+
+[blender]
+executable = "E:/Programs/blender/blender.exe"
+
+# Example: brain-only BodyParts3D model (no spine)
+# [bodyparts3d]
+# enabled_groups = ["CEREBELLUM", "BRAINSTEM", "SUBCORTICAL_STRUCTURES", "OTHER_BRAIN_STRUCTURES", "CEREBRAL_CORTEX"]
