@@ -3,6 +3,9 @@
 -----------------------
 STEP 2 of the pipeline: Human Brainnetome atlas  ->  one PLY mesh per region.
 
+Runs in modes "brainnetome" and "integrated"; skipped in mode "bodyparts3d" (see configs/default.toml).
+Options: --mode {brainnetome,bodyparts3d,integrated}   --config FILE|PROFILE
+
 Reads   data/raw/brainnetome/atlas/BNA_MPM_thr25_1.25mm.nii.gz
         (a 3D grid of voxels; every voxel holds the id of the region it belongs to, 0 = background)
         data/raw/brainnetome/labels/BN_Atlas_246_LUT.txt   (id -> name + colour)
@@ -58,6 +61,11 @@ def _bootstrap():
 
 _bootstrap()
 
+# Select mode / config (--config, --mode, MEDVERSE_CONFIG, MEDVERSE_MODE) BEFORE any medverse.anatomy import.
+from medverse import settings as _settings  # noqa: E402
+
+_settings.configure_from_argv()
+
 # ---------------------------------------------------------------------------
 # Import project modules
 # ---------------------------------------------------------------------------
@@ -67,6 +75,12 @@ from medverse.anatomy.config import (
     BN_LUT_PATH,
     BN_PIECES_DIR,
     EXPORT_BNA_REPORT_PATH,
+    BN_MPM_FILENAME,
+    BN_SMOOTH_SIGMA,
+    BN_MIN_VOXELS,
+    BN_EXPECTED_REGIONS,
+    USE_BRAINNETOME,
+    SETTINGS,
     ensure_output_dirs,
 )
 from medverse.anatomy.classes import log, warn, reset_state
@@ -74,10 +88,11 @@ from medverse.anatomy.classes import log, warn, reset_state
 # ---------------------------------------------------------------------------
 # settings
 # ---------------------------------------------------------------------------
-MPM_FILENAME = "BNA_MPM_thr25_1.25mm.nii.gz"   # maximum-probability-map atlas, 1.25 mm voxels
-SMOOTH_SIGMA = 0.8      # Gaussian blur of each mask before meshing (0 = no smoothing, blocky look)
-MIN_VOXELS = 10         # regions with fewer voxels are skipped
-EXPECTED_REGIONS = 246  # Brainnetome has 246 regions (1-210 cortical, 211-246 subcortical)
+# (values come from configs/default.toml, section [brainnetome]; kept under their historical names)
+MPM_FILENAME = BN_MPM_FILENAME          # maximum-probability-map atlas, 1.25 mm voxels
+SMOOTH_SIGMA = BN_SMOOTH_SIGMA          # Gaussian blur of each mask before meshing (0 = blocky look)
+MIN_VOXELS = BN_MIN_VOXELS              # regions with fewer voxels are skipped
+EXPECTED_REGIONS = BN_EXPECTED_REGIONS  # Brainnetome has 246 regions (1-210 cortical, 211-246 subcortical)
 
 
 def find_atlas():
@@ -172,8 +187,12 @@ def region_to_mesh(mask, affine, flip):
 
 def main():
     reset_state()
+    if not USE_BRAINNETOME:
+        log(f"[skip] {SETTINGS.describe()}: Brainnetome is not part of this model")
+        return 0
     ensure_output_dirs()
     log.section("Brainnetome atlas -> PLY pieces")
+    log(f"config : {SETTINGS.describe()}")
     mpm_path = find_atlas()
     log(f"atlas  : {mpm_path}")
     log(f"LUT    : {BN_LUT_PATH}")

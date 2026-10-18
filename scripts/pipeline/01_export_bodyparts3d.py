@@ -6,13 +6,16 @@ BodyParts3D  ->  clean, optimized, Blender-ready PLY pieces + manifest.
 Inputs : data/raw/bodyparts3d/metadata/*.txt   and   data/interim/bodyparts3d/obj_*/**.obj
 Needs  : the medverse package (pip install -e ".[export]"  or just run from the repo)
 
-Division of labour:
-    Human Brainnetome -> cerebral cortex
-    BodyParts3D       -> everything else (this script)
+Division of labour (depends on the configured mode, see configs/default.toml):
+    integrated   : Human Brainnetome -> cerebral cortex | BodyParts3D -> everything else (this script)
+    bodyparts3d  : BodyParts3D only, INCLUDING its own cerebral cortex (exported as group CEREBRAL_CORTEX)
+    brainnetome  : this step is skipped (nothing to export from BodyParts3D)
+
+Options:  --mode {brainnetome,bodyparts3d,integrated}   --config FILE|PROFILE
 
 Writes  data/interim/bodyparts3d/export_pieces/{meshes/<GROUP>/*.ply, manifest.json, reference/*.npz}
         data/processed/reports/export_bodyparts3d_report.txt
-All settings live in medverse/anatomy/config.py, all paths in medverse/paths.py.
+Settings: configs/*.toml (loaded by medverse/settings.py), all paths in medverse/paths.py.
 """
 import os
 import sys
@@ -48,6 +51,11 @@ def _bootstrap():
 
 _bootstrap()
 
+# Select mode / config (--config, --mode, MEDVERSE_CONFIG, MEDVERSE_MODE) BEFORE any medverse.anatomy import.
+from medverse import settings as _settings  # noqa: E402
+
+_settings.configure_from_argv()
+
 
 # ---------------------------------------------------------------------------
 # Import project modules
@@ -73,7 +81,13 @@ from medverse.anatomy.classes import (
 def main():
     """Run the complete BodyParts3D export pipeline. Returns a process exit code."""
     reset_state()
+    if not USE_BODYPARTS3D:
+        log(f"[skip] {SETTINGS.describe()}: BodyParts3D is not part of this model")
+        return 0
     log.section("BodyParts3D export pipeline")
+    log(f"config                : {SETTINGS.describe()}")
+    log(f"config files          : {', '.join(str(p) for p in SETTINGS.sources)}")
+    log(f"enabled groups        : {', '.join(ENABLED_BP3D_GROUPS)}")
     log(f"BODYPARTS3D_BASE_PATH : {BODYPARTS3D_BASE_PATH}")
     log(f"OUTPUT_DIR            : {OUTPUT_DIR}")
     if not os.path.isdir(BODYPARTS3D_BASE_PATH):
@@ -105,6 +119,9 @@ def main():
     # ------------------------------------------------------------------ classification
     log.section("Structure discovery / classification")
     cls = classify_all(meta, muscle)
+    for r in cls.values():                                  # groups switched off in the config
+        if r["decision"] == "include" and r["group"] not in ENABLED_BP3D_GROUPS:
+            r["decision"], r["reason"] = "exclude", f"group {r['group']} disabled in config"
     inc = [r for r in cls.values() if r["decision"] == "include"]
     amb = [r for r in cls.values() if r["decision"] == "ambiguous"]
     exc_cortex = [r for r in cls.values() if r["group"] == "CORTEX_DUPLICATE"]
@@ -115,7 +132,9 @@ def main():
     log(f"elements in requested scope   : {len(cls)}")
     log(f"elements out of scope (body)  : {out_of_scope}   [limbs, organs, vessels, ... never loaded]")
     log(f"selected                      : {len(inc)}")
-    log(f"excluded - cerebral cortex    : {len(exc_cortex)}  (Brainnetome is the source)")
+    log(f"cerebral cortex elements      : {len(exc_cortex)}  "
+        + ("(EXPORTED as CEREBRAL_CORTEX: BodyParts3D is the cortex source)" if EXPORT_BP3D_CORTEX
+           else "(excluded, used only as registration reference: Brainnetome is the cortex source)"))
     log(f"excluded - muscle in scope    : {len(exc_muscle)}")
     log(f"excluded - other / disabled   : {len(exc_other)}")
     log(f"AMBIGUOUS (excluded, reported): {len(amb)}")
@@ -214,6 +233,12 @@ def main():
     def to_ras(v):
         return (v @ M.T) * factor
 
+    if EXPORT_BP3D_CORTEX:                                  # standalone mode: the cortex becomes a normal group
+        for u in loaded_cx:
+            u["group"], u["subgroup"] = "CEREBRAL_CORTEX", "cortex"
+        loaded = loaded + loaded_cx
+        log(f"BodyParts3D cerebral cortex pieces added to the export: {len(loaded_cx)}")
+
     # ------------------------------------------------------------------ geometry
     log.section("Geometry cleaning / optimization")
     weld_raw = WELD_TOLERANCE_MM / factor
@@ -252,7 +277,8 @@ def main():
 
     mesh_dir = os.path.join(OUTPUT_DIR, "meshes")
     for g in GROUP_ORDER:
-        os.makedirs(os.path.join(mesh_dir, g), exist_ok=True)
+        if g in ENABLED_BP3D_GROUPS:                        # no empty folders for disabled groups
+            os.makedirs(os.path.join(mesh_dir, g), exist_ok=True)
     manifest_structs = []
     for u in loaded:
         v, f = u["cv"], u["cf"]
@@ -404,7 +430,8 @@ def main():
         "ambiguous": [{"element": r["fj"], "label": r["label"], "reason": r["reason"]} for r in amb],
         "missing": missing,
         "options": {"ventricles": INCLUDE_VENTRICULAR_SYSTEM, "white_matter": INCLUDE_CEREBRAL_WHITE_MATTER,
-                    "cranial_nerves": INCLUDE_CRANIAL_NERVES},
+                    "cranial_nerves": INCLUDE_CRANIAL_NERVES, "mode": MODE,
+                    "export_bp3d_cortex": EXPORT_BP3D_CORTEX, "enabled_groups": list(ENABLED_BP3D_GROUPS)},
     }
     with open(os.path.join(OUTPUT_DIR, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=1)
