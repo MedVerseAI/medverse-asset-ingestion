@@ -1,14 +1,21 @@
 """
 03_integrate_brainnetome_bodyparts3d.py
 ---------------------------------------
-Blender entry point for Brainnetome + BodyParts3D integration (STEP 3).
+Blender entry point of the model build (STEP 3). What it builds depends on the configured mode
+(configs/default.toml, [model] mode):
 
-Run from a terminal:
-    blender --background --python scripts/pipeline/03_integrate_brainnetome_bodyparts3d.py
-or from Blender's Text Editor (then set the MEDVERSE_ROOT environment variable first).
+    brainnetome  : Brainnetome cerebral cortex only             needs step 02
+    bodyparts3d  : BodyParts3D brain parts + spine + own cortex  needs step 01
+    integrated   : Brainnetome cortex + BodyParts3D, registered  needs steps 01 + 02   (default)
 
-Needs the outputs of step 01 and step 02 (they are independent of each other).
-Writes data/processed/final/anatomical_model.blend and data/processed/reports/integration_report.txt
+Run from a terminal (arguments for this script go after the `--`):
+    blender --background --python scripts/pipeline/03_integrate_brainnetome_bodyparts3d.py -- --mode brainnetome
+    blender --background --python scripts/pipeline/03_integrate_brainnetome_bodyparts3d.py -- --config configs/profiles/bodyparts3d.toml
+or from Blender's Text Editor (then set the MEDVERSE_ROOT / MEDVERSE_MODE environment variables first).
+`python scripts/run_pipeline.py --mode ...` runs every step the mode needs, in order.
+
+Writes data/processed/final/anatomical_model[_<mode>].blend and reports/integration_report[_<mode>].txt
+(the integrated model keeps the historical file names).
 The pipeline algorithms and scene-building function bodies are preserved.
 """
 import os
@@ -45,6 +52,11 @@ def _bootstrap():
 
 
 _bootstrap()
+
+# Select mode / config (-- --config X / -- --mode Y, MEDVERSE_CONFIG, MEDVERSE_MODE) BEFORE any medverse import.
+from medverse import settings as _settings  # noqa: E402
+
+_settings.configure_from_argv()
 
 # ----------------------------------------------------------------------------
 # Import project modules
@@ -216,13 +228,17 @@ Combines Brainnetome and BodyParts3D structures, applies placement, creates obje
     root_coll = bpy.data.collections.new(ROOT_NAME)
     scene.collection.children.link(root_coll)
     brain_coll = new_collection("BRAIN", root_coll)
-    spinal_coll = new_collection("SPINAL_SYSTEM", root_coll)
+    systems = {"BRAIN": brain_coll}
+    if any(g in ENABLED_BP3D_GROUPS for g in ("VERTEBRAE", "INTERVERTEBRAL_DISCS", "SPINAL_CORD")) \
+            and bp is not None:
+        systems["SPINAL_SYSTEM"] = new_collection("SPINAL_SYSTEM", root_coll)
     help_coll = new_collection("HELPERS_METADATA", root_coll)
-    systems = {"BRAIN": brain_coll, "SPINAL_SYSTEM": spinal_coll}
-    cortex_coll = new_collection("CEREBRAL_CORTEX_BRAINNETOME", brain_coll)
-    hemi_coll = {"L": new_collection("BN_LEFT_HEMISPHERE", cortex_coll),
-                 "R": new_collection("BN_RIGHT_HEMISPHERE", cortex_coll),
-                 "": cortex_coll}
+    cortex_coll = hemi_coll = None
+    if bn is not None:
+        cortex_coll = new_collection("CEREBRAL_CORTEX_BRAINNETOME", brain_coll)
+        hemi_coll = {"L": new_collection("BN_LEFT_HEMISPHERE", cortex_coll),
+                     "R": new_collection("BN_RIGHT_HEMISPHERE", cortex_coll),
+                     "": cortex_coll}
     group_coll = {}
 
     root_obj = bpy.data.objects.new(ROOT_NAME, None)
@@ -232,10 +248,11 @@ Combines Brainnetome and BodyParts3D structures, applies placement, creates obje
 
     # ---------------- Brainnetome cortex ----------------
     A_bn = place["A_bn"]
-    flip_bn = np.linalg.det(A_bn[:3, :3]) < 0
+    flip_bn = A_bn is not None and np.linalg.det(A_bn[:3, :3]) < 0
     n_bn = 0
-    for rid in sorted(bn["pieces"]):
-        p = bn["pieces"][rid]
+    bn_pieces = bn["pieces"] if bn is not None else {}
+    for rid in sorted(bn_pieces):
+        p = bn_pieces[rid]
         v = apply_affine(A_bn, p["verts"])
         v = scale_about_own_center(v, BN_REGION_GAP_SCALE)
         col = hemi_coll.get(p["hemi"], cortex_coll)
@@ -246,15 +263,19 @@ Combines Brainnetome and BodyParts3D structures, applies placement, creates obje
         obj["bn_region_name"] = p["label"]
         obj["hemisphere"] = p["hemi"]
         n_bn += 1
-    log(f"Brainnetome cortical regions created: {n_bn} (one object each)")
+    if bn is not None:
+        log(f"Brainnetome cortical regions created: {n_bn} (one object each)")
 
     # ---------------- BodyParts3D ----------------
     A_bp = place["A_bp"]
-    flip_bp = np.linalg.det(A_bp[:3, :3]) < 0
+    flip_bp = A_bp is not None and np.linalg.det(A_bp[:3, :3]) < 0
     materials = {}
     counts = collections.Counter()
-    for st in sorted(bp["structs"], key=lambda s: s["index"]):
+    bp_structs = bp["structs"] if bp is not None else []
+    for st in sorted(bp_structs, key=lambda s: s["index"]):
         system, cname = GROUP_TO_COLLECTIONS.get(st["group"], ("SPINAL_SYSTEM", "OTHER_RELEVANT_STRUCTURES"))
+        if system not in systems:
+            systems[system] = new_collection(system, root_coll)
         key = (system, cname)
         if key not in group_coll:
             group_coll[key] = new_collection(cname, systems[system])
@@ -274,13 +295,13 @@ Combines Brainnetome and BodyParts3D structures, applies placement, creates obje
         log(f"BodyParts3D {g:26s}: {n}")
 
     # ---------------- helpers: landmark empties ----------------
-    for k, v in sorted(bp["landmarks"].items()):
+    for k, v in sorted((bp["landmarks"] if bp is not None else {}).items()):
         e = bpy.data.objects.new(f"LM_BP3D_{k}", None)
         e.empty_display_type, e.empty_display_size = "SPHERE", 3.0 * BLENDER_UNITS_PER_MM
         e.location = tuple(apply_affine(A_bp, v[None, :])[0].tolist())
         help_coll.objects.link(e)
         e.hide_viewport = True
-    for k, v in sorted(bn["landmarks"].items()):
+    for k, v in sorted((bn["landmarks"] if bn is not None else {}).items()):
         e = bpy.data.objects.new(f"LM_BN_{k}", None)
         e.empty_display_type, e.empty_display_size = "CUBE", 3.0 * BLENDER_UNITS_PER_MM
         e.location = tuple(apply_affine(A_bn, v[None, :])[0].tolist())   # A_bn already contains the x-flip
@@ -324,7 +345,8 @@ Checks object counts, metadata, collections, and other structural conditions aft
     log(f"mesh objects in model: {len(objs)} | muscle objects: {len(bad)}")
     if bad:
         raise RuntimeError(f"muscle objects found in the scene: {bad}")
-    dup_cortex = [o.name for o in objs if o.get("source") == "BodyParts3D" and
+    # Only meaningful when Brainnetome supplies the cortex; in mode 'bodyparts3d' the BP3D cortex is intended.
+    dup_cortex = [o.name for o in objs if USE_BRAINNETOME and o.get("source") == "BodyParts3D" and
                   CORTEX_GUARD_RX.search(o.name.lower()) and not CORTEX_GUARD_EXCEPT_RX.search(o.name.lower())]
     log(f"BodyParts3D cortical duplicates: {len(dup_cortex)}")
     if dup_cortex:
@@ -349,21 +371,25 @@ Computes bounds and structure-level geometry information used for validation and
     log.section("Anatomical relationship checks (final model space, mm)")
     mm = 1.0 / BLENDER_UNITS_PER_MM
     invU = np.diag([mm, mm, mm, 1.0])
-    A_bn = invU @ place["A_bn"]
-    A_bp = invU @ place["A_bp"]
-    bn_all = apply_affine(A_bn, np.concatenate([p["verts"] for p in bn["pieces"].values()]))
-    lo, hi = bbox(bn_all)
-    log(f"Brainnetome cortex bbox: {np.round(lo, 1).tolist()} .. {np.round(hi, 1).tolist()}")
+    A_bn = invU @ place["A_bn"] if bn is not None else None
+    A_bp = invU @ place["A_bp"] if bp is not None else None
+    lo = hi = None
+    if bn is not None:
+        bn_all = apply_affine(A_bn, np.concatenate([p["verts"] for p in bn["pieces"].values()]))
+        lo, hi = bbox(bn_all)
+        log(f"Brainnetome cortex bbox: {np.round(lo, 1).tolist()} .. {np.round(hi, 1).tolist()}")
+    if bp is None:
+        return
     groups = collections.defaultdict(list)
     for st in bp["structs"]:
         groups[st["group"]].append(apply_affine(A_bp, st["verts"]))
     cat = {g: np.concatenate(v) for g, v in groups.items()}
-    if "CEREBELLUM" in cat:
+    if "CEREBELLUM" in cat and lo is not None:
         c = cat["CEREBELLUM"]
         inside = np.all((c >= lo) & (c <= hi), axis=1).mean()
         log(f"cerebellum vertices inside the cortex bbox: {100 * inside:.1f} % "
             f"(cerebellum top z = {c[:, 2].max():.1f} mm vs cortex bottom z = {lo[2]:.1f} mm)")
-    if "SUBCORTICAL_STRUCTURES" in cat:
+    if "SUBCORTICAL_STRUCTURES" in cat and lo is not None:
         c = cat["SUBCORTICAL_STRUCTURES"]
         inside = np.all((c >= lo) & (c <= hi), axis=1).mean()
         log(f"deep structure vertices inside the cortex bbox: {100 * inside:.1f} %")
@@ -417,7 +443,7 @@ Combines pipeline statistics, registration results, and scene validation informa
     log(f"final scale factors: BN->BP3D {place['s']:.5f} | mm->Blender {BLENDER_UNITS_PER_MM} | "
         f"object transforms: identity rotation/scale, origin at each piece median")
     root_obj["registration_json"] = json.dumps({
-        "bn_to_bp3d_scale": place["s"], "rotation_matrix": place["R"].tolist(),
+        "mode": MODE, "bn_to_bp3d_scale": place["s"], "rotation_matrix": place["R"].tolist(),
         "translation_mm": place["t"].tolist(), "method": place["reg"]["method"],
         "orient_model_to_atlas": ORIENT_MODEL_TO_ATLAS, "units_per_mm": BLENDER_UNITS_PER_MM,
         "landmark_residuals_mm": place["landmark_residuals"]})
@@ -559,13 +585,18 @@ def main():
 Loads both anatomical sources, registers them, builds the Blender scene, audits the result,
 writes the final report and saves everything under data/processed/ (reports/ and final/)."""
     reset_state()
-    ensure_output_dirs()
-    missing_inputs = check_integration_inputs()
+    missing_inputs = check_integration_inputs()        # before ensure_output_dirs(), which creates the interim folders
     if missing_inputs:
-        raise FileNotFoundError(f"missing input path(s): {missing_inputs}")
-    log.section("Brainnetome + BodyParts3D integration")
-    bn = load_brainnetome()
-    bp = load_bodyparts3d()
+        raise FileNotFoundError(
+            f"missing input path(s) for mode '{MODE}': {missing_inputs}\n"
+            f"run the steps this mode needs first: {', '.join(SETTINGS.steps[:-1])} "
+            f"(or: python scripts/run_pipeline.py --mode {MODE})")
+    ensure_output_dirs()
+    log.section("Anatomical model build")
+    log(f"config : {SETTINGS.describe()}")
+    log(f"config files: {', '.join(str(p) for p in SETTINGS.sources)}")
+    bn = load_brainnetome() if USE_BRAINNETOME else None
+    bp = load_bodyparts3d() if USE_BODYPARTS3D else None
     place = compute_placement(bn, bp)
     root_obj, root_coll, _ = build_scene(bn, bp, place)
     purge_scene_except_model(root_coll)

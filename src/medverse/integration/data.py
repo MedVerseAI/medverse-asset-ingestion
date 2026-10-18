@@ -141,13 +141,22 @@ Reads the exporter outputs, reconstructs structure records, and prepares them fo
         warn(f"not available in BodyParts3D export: {m}")
     for a in man.get("ambiguous", []):
         log(f"[ambiguous, not imported] {a['element']} {a['label']}")
+    mopt = man.get("options", {})
+    if EXPORT_BP3D_CORTEX and not mopt.get("export_bp3d_cortex"):
+        warn("mode 'bodyparts3d' wants the BodyParts3D cortex but the manifest was exported without it: "
+             "re-run step 01 (python scripts/pipeline/01_export_bodyparts3d.py --mode bodyparts3d)")
     structs, rejected = [], []
+    not_enabled = collections.Counter()
     for s in man["structures"]:
         txt = f"{s['label']} {s['name']}".lower()
+        if s["group"] not in ENABLED_BP3D_GROUPS:              # disabled in config, or a stale cortex export
+            not_enabled[s["group"]] += 1
+            continue
         if s.get("is_muscle") or MUSCLE_GUARD_RX.search(txt):
             rejected.append((s["name"], "muscle guard"))
             continue
-        if CORTEX_GUARD_RX.search(s["label"].lower()) and not CORTEX_GUARD_EXCEPT_RX.search(s["label"].lower()):
+        if (s["group"] != "CEREBRAL_CORTEX" and CORTEX_GUARD_RX.search(s["label"].lower())
+                and not CORTEX_GUARD_EXCEPT_RX.search(s["label"].lower())):
             rejected.append((s["name"], "cerebral cortex duplicate guard"))
             continue
         path = os.path.join(BP3D_EXPORT_DIR, s["file"].replace("/", os.sep))
@@ -160,15 +169,20 @@ Reads the exporter outputs, reconstructs structure records, and prepares them fo
         structs.append(s)
     for n, why in rejected:
         warn(f"structure '{n}' rejected by {why}")
+    for g, n in sorted(not_enabled.items()):
+        log(f"[config] {n} '{g}' structure(s) in the manifest skipped (group not enabled for mode '{MODE}')")
     log(f"structures loaded: {len(structs)}")
+    if not structs:
+        raise RuntimeError("no BodyParts3D structure left after applying the enabled groups; "
+                           "check [bodyparts3d] enabled_groups in the config")
     ref = None
-    if man["reference"].get("file"):
+    if USE_BRAINNETOME and man["reference"].get("file"):       # the cortex reference is only for registration
         rp = os.path.join(BP3D_EXPORT_DIR, man["reference"]["file"].replace("/", os.sep))
         if os.path.exists(rp):
             ref = np.load(rp)["points"].astype(np.float64)
             log(f"cortex reference cloud: {len(ref)} points from {man['reference']['elements']} elements "
                 "(registration only, not imported)")
-    if ref is None:
+    if ref is None and USE_BRAINNETOME:
         warn("no BodyParts3D cortex reference cloud: registration falls back to landmarks")
     lm = {}
     for key, rxs in BP3D_LANDMARK_LABEL_RX.items():
@@ -185,6 +199,39 @@ Reads the exporter outputs, reconstructs structure records, and prepares them fo
 # REGISTRATION + PLACEMENT (numpy only)
 # ============================================================================
 # -----------------------------------------------------------------------------
+# Placement of a single-source model (mode 'brainnetome' or 'bodyparts3d'): no registration needed.
+# Only centres the model at the origin and converts millimetres to Blender units.
+# Returns the same dictionary layout as compute_placement (A_bn / A_bp is None for the unused source).
+# -----------------------------------------------------------------------------
+def compute_single_placement(bn, bp):
+    """Placement without registration: mirror x if the atlas is LAS (Brainnetome), centre, mm -> Blender units."""
+    log.section("Placement: single-source model (no registration)")
+    if bn is not None:
+        P = np.diag([-1.0, 1.0, 1.0]) if bn["frame"]["flip_x"] else np.eye(3)
+        pts = np.concatenate([p["verts"] for p in bn["pieces"].values()]) @ P.T
+        source = "Brainnetome (MNI mm, RAS-corrected)"
+    else:
+        if not bp["structs"]:
+            raise RuntimeError("no BodyParts3D structures to place")
+        P = np.eye(3)
+        pts = np.concatenate([st["verts"] for st in bp["structs"]])             # exporter output is RAS mm
+        source = "BodyParts3D (RAS mm)"
+    lo, hi = bbox(pts)
+    center = (lo + hi) / 2.0
+    C = np.eye(4)
+    C[:3, 3] = -center
+    U = np.diag([BLENDER_UNITS_PER_MM] * 3 + [1.0])
+    A = U @ C @ affine(1.0, P, np.zeros(3))
+    log(f"source                : {source}")
+    log(f"extent (mm)           : {np.round(hi - lo, 1).tolist()}")
+    log(f"centering shift (mm)  : {np.round(-center, 3).tolist()}")
+    log(f"mm -> Blender units   : {BLENDER_UNITS_PER_MM}")
+    return {"reg": {"method": "none (single source)"}, "s": 1.0, "R": np.eye(3), "t": np.zeros(3),
+            "P": P, "G": np.eye(3), "A_bn": A if bn is not None else None,
+            "A_bp": A if bn is None else None, "landmark_residuals": {}}
+
+
+# -----------------------------------------------------------------------------
 # Compute the final placement transform for the integrated anatomical model.
 # Parameters / return behavior: see the unchanged function signature and body.
 # Combines registration results and anatomical extents to determine the model transform used in the scene.
@@ -193,6 +240,8 @@ def compute_placement(bn, bp):
     """Compute the final placement transform for the integrated anatomical model.
 
 Combines registration results and anatomical extents to determine the model transform used in the scene."""
+    if bn is None or bp is None:
+        return compute_single_placement(bn, bp)
     log.section("Registration: Brainnetome cortex -> BodyParts3D")
     P = np.diag([-1.0, 1.0, 1.0]) if bn["frame"]["flip_x"] else np.eye(3)
     bn_lm = {k: P @ v for k, v in bn["landmarks"].items()}       # landmarks in RAS-corrected BN space
