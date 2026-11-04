@@ -228,3 +228,6 @@ data/raw/*
 # Ignore extracted interim 3D meshes
 data/interim/*
 !data/interim/.gitkeep.DS_Store
+
+.DS_Store
+**/.DS_Store

@@ -1,44 +1,68 @@
-import os
-import zipfile
-import tarfile
+"""
+src/medverse/extraction.py
+Cross-platform archive extraction with progress tracking.
+"""
+from __future__ import annotations
 
-def extract_dataset(archive_path: str, extract_to: str, delete_archive: bool = False) -> bool:
+import tarfile
+import zipfile
+from pathlib import Path
+
+
+def extract(archive: Path | str, destination: Path | str, delete_archive: bool = False) -> bool:
     """
-    Extracts .zip or .tar.gz archives into the target directory.
-    Optionally deletes the original archive to save hard drive space.
+    Extract a .zip or .tar.gz archive with a progress bar.
+    Preserves the raw archive by default (delete_archive=False).
     """
-    if not os.path.exists(archive_path):
-        print(f"[Extraction] Error: Archive not found at {archive_path}")
+    archive_path = Path(archive)
+    dest_path = Path(destination)
+
+    if not archive_path.is_file():
+        print(f"[EXTRACT] Error: Archive not found at {archive_path}")
         return False
 
-    # Ensure the destination folder (data/interim) exists
-    os.makedirs(extract_to, exist_ok=True)
-    print(f"[Extraction] Unpacking {archive_path} into {extract_to}...")
+    dest_path.mkdir(parents=True, exist_ok=True)
+    print(f"[EXTRACT] {archive_path.name} -> {dest_path}")
 
     try:
-        # Handle standard Zip files
-        if archive_path.endswith('.zip'):
-            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_to)
-                
-        # Handle Tarballs (common in scientific/medical datasets)
-        elif archive_path.endswith(('.tar.gz', '.tgz', '.tar')):
-            with tarfile.open(archive_path, 'r:*') as tar_ref:
-                tar_ref.extractall(extract_to)
-                
+        name_lower = archive_path.name.lower()
+        if name_lower.endswith(".zip"):
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                members = zf.infolist()
+                total = len(members)
+                if not total:
+                    print(f"[OK] {dest_path} (empty archive)")
+                    return True
+                for i, member in enumerate(members, 1):
+                    zf.extract(member, dest_path)
+                    filled = int(30 * i / total)
+                    print(
+                        f"\r[{'=' * filled}{'-' * (30 - filled)}] "
+                        f"{i * 100 / total:6.2f}% {i}/{total} files",
+                        end="",
+                        flush=True,
+                    )
+            print(f"\n[OK] {dest_path}")
+
+        elif name_lower.endswith((".tar.gz", ".tgz", ".tar")):
+            with tarfile.open(archive_path, "r:*") as tf:
+                tf.extractall(dest_path)
+            print(f"[OK] {dest_path}")
+
         else:
-            print(f"[Extraction] Unsupported file format: {archive_path}")
+            print(f"[EXTRACT] Unsupported archive format: {archive_path.name}")
             return False
 
-        print(f"[Extraction] SUCCESS: Files extracted to {extract_to}")
-
-        # Storage management logic
         if delete_archive:
-            os.remove(archive_path)
-            print(f"[Extraction] Cleaned up original archive to save space: {archive_path}")
+            archive_path.unlink(missing_ok=True)
+            print(f"[CLEANUP] Removed raw archive: {archive_path.name}")
 
         return True
 
-    except (zipfile.BadZipFile, tarfile.ReadError) as e:
-        print(f"[Extraction] FATAL ERROR: Archive is corrupted or incomplete. {e}")
+    except (zipfile.BadZipFile, tarfile.ReadError, RuntimeError, OSError) as exc:
+        print(f"\n[EXTRACT] FATAL ERROR: Archive is corrupted or incomplete: {exc}")
         return False
+
+
+# Alias for backward compatibility with unit tests
+extract_dataset = extract

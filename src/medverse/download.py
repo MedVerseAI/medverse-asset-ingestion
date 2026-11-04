@@ -1,46 +1,89 @@
-import os
+"""
+src/medverse/download.py
+Download, verify and extract helpers shared by the dataset downloaders.
+"""
+from __future__ import annotations
+
+from pathlib import Path
 import requests
 
-def download_dataset(url: str, dest_path: str, chunk_size: int = 5242880) -> bool:
+from medverse.extraction import extract, extract_dataset
+from medverse.validation import (
+    sha256_of,
+    verify_checksums,
+    verify_file,
+    verify_zip,
+    write_checksums,
+)
+
+CHUNK_SIZE_5MB = 5 * 1024 * 1024
+
+
+def download(url: str, destination: Path | str, force: bool = False) -> bool:
     """
-    Downloads massive datasets over HTTP using large network-optimized chunks.
-    Default chunk_size is 5MB (5242880 bytes) to maximize bandwidth.
+    Stream-download ``url`` to ``destination`` unless a non-empty file already exists.
+    Writes to a temporary ``.part`` file first so interrupted downloads never leave
+    corrupt partial files in ``data/raw/``.
     """
-    # Ensure the target directory (e.g., data/raw/) exists before writing
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-    
-    print(f"[Network] Initiating connection to {url}...")
-    
-    try:
-        # stream=True is critical: it keeps the 5GB file out of the RAM
-        with requests.get(url, stream=True, timeout=30) as response:
-            response.raise_for_status() # Instantly catch 404 or 500 errors
-            
-            # Extract file size from HTTP headers for the progress tracker
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-            
-            print(f"[Network] Connected. Downloading {total_size / (1024 * 1024):.2f} MB...")
-            
-            # Write to disk in 5 MB chunks
-            with open(dest_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Print a dynamic progress bar on a single terminal line
-                        if total_size > 0:
-                            percent = (downloaded / total_size) * 100
-                            print(f"\r[Network] Progress: {percent:.1f}% ({downloaded / (1024*1024):.1f} MB)", end="")
-            
-            print("\n[Network] SUCCESS: Download complete.")
-            return True
-            
-    except requests.exceptions.RequestException as e:
-        print(f"\n[Network] FATAL ERROR: Connection failed. {e}")
-        # Automatically delete the corrupted partial file to prevent false validations later
-        if os.path.exists(dest_path):
-            os.remove(dest_path)
-            print(f"[Network] Cleaned up partial file: {dest_path}")
+    dest = Path(destination)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    if dest.is_file() and dest.stat().st_size > 0 and not force:
+        print(f"[SKIP] {dest.name} (already exists)")
         return False
+
+    temp_dest = dest.with_suffix(dest.suffix + ".part")
+    print(f"[DOWNLOAD] {dest.name}")
+
+    try:
+        with requests.get(url, stream=True, timeout=30) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded = 0
+
+            with open(temp_dest, "wb") as fh:
+                for chunk in response.iter_content(chunk_size=CHUNK_SIZE_5MB):
+                    if not chunk:
+                        continue
+                    fh.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        filled = int(30 * min(downloaded, total_size) / total_size)
+                        bar = "=" * filled + "-" * (30 - filled)
+                        print(
+                            f"\r[{bar}] {downloaded * 100 / total_size:6.2f}% "
+                            f"{downloaded / 1048576:.1f}/{total_size / 1048576:.1f} MB",
+                            end="",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            f"\rDownloaded: {downloaded / 1048576:.1f} MB",
+                            end="",
+                            flush=True,
+                        )
+
+        temp_dest.replace(dest)
+        print(f"\n[OK] {dest}")
+        return True
+
+    except Exception as exc:
+        temp_dest.unlink(missing_ok=True)
+        print(f"\n[ERROR] Failed to download {dest.name}: {exc}")
+        raise
+
+
+# Alias for backward compatibility
+download_dataset = download
+
+__all__ = [
+    "download",
+    "download_dataset",
+    "extract",
+    "extract_dataset",
+    "sha256_of",
+    "verify_checksums",
+    "verify_file",
+    "verify_zip",
+    "write_checksums",
+]

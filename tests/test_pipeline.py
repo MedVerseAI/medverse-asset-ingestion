@@ -1,66 +1,81 @@
 import os
-import unittest
-import hashlib
-import zipfile
 import shutil
-from src.medverse.validation import verify_file
-from src.medverse.extraction import extract_dataset
+import sys
+import unittest
+import zipfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+for package_root in (REPO_ROOT, REPO_ROOT / "src"):
+    if (package_root / "medverse").is_dir():
+        sys.path.insert(0, str(package_root))
+
+from medverse import paths
+from medverse.extraction import extract
+from medverse.validation import (
+    sha256_of,
+    verify_checksums,
+    verify_file,
+    verify_zip,
+    write_checksums,
+)
+
 
 class TestDatasetPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        """Creates both valid and invalid dummy files for comprehensive testing."""
-        cls.invalid_zip = "tests/invalid_test.zip"
-        cls.valid_zip = "tests/valid_test.zip"
-        cls.extract_dir = "tests/output/"
-        cls.dummy_txt = "tests/dummy.txt"
-        os.makedirs(cls.extract_dir, exist_ok=True)
-        
-        # 1. Create an invalid zip (just random bytes)
-        with open(cls.invalid_zip, "wb") as f:
-            f.write(os.urandom(1024))
+        cls.test_dir = REPO_ROOT / "tests" / "tmp_test_artifacts"
+        cls.extract_dir = cls.test_dir / "extracted"
+        cls.invalid_zip = cls.test_dir / "invalid_test.zip"
+        cls.valid_zip = cls.test_dir / "valid_test.zip"
+        cls.dummy_txt = cls.test_dir / "dummy.txt"
+        cls.checksum_file = cls.test_dir / "checksums.sha256"
 
-        # 2. Create a real, structurally valid zip file
-        with open(cls.dummy_txt, "w") as f:
-            f.write("MedVerse VR Data")
-        with zipfile.ZipFile(cls.valid_zip, 'w') as zipf:
+        cls.extract_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Create an invalid zip (random bytes)
+        cls.invalid_zip.write_bytes(os.urandom(1024))
+
+        # 2. Create a valid zip archive
+        cls.dummy_txt.write_text("MedVerse VR Data", encoding="utf-8")
+        with zipfile.ZipFile(cls.valid_zip, "w") as zipf:
             zipf.write(cls.dummy_txt, arcname="dummy.txt")
 
-        # 3. Calculate the exact SHA-256 hash of the valid zip
-        sha256 = hashlib.sha256()
-        with open(cls.valid_zip, "rb") as f:
-            sha256.update(f.read())
-        cls.valid_hash = sha256.hexdigest()
+        cls.valid_hash = sha256_of(cls.valid_zip)
+
+    def test_paths_resolution(self):
+        """Ensure centralized paths resolve across OS platforms."""
+        self.assertTrue(paths.ROOT.is_dir())
+        self.assertEqual(paths.BP3D_RAW, paths.RAW / "bodyparts3d")
 
     def test_validation_missing_file(self):
-        self.assertFalse(verify_file("nonexistent_file.zip"))
-
-    def test_validation_without_hash(self):
-        self.assertTrue(verify_file(self.valid_zip))
+        self.assertFalse(verify_file( self.test_dir / "nonexistent.zip"))
 
     def test_validation_correct_hash(self):
-        """Ensures the inspector passes a file with the mathematically correct hash."""
         self.assertTrue(verify_file(self.valid_zip, self.valid_hash))
 
-    def test_extraction_invalid_file(self):
-        """Ensures the unpacker gracefully fails on corrupted data."""
-        self.assertFalse(extract_dataset(self.invalid_zip, self.extract_dir))
+    def test_verify_zip_and_checksums_manifest(self):
+        """Test verify_zip, write_checksums, and verify_checksums from docs/data_dictionary."""
+        verify_zip(self.valid_zip)
+        with self.assertRaises(RuntimeError):
+            verify_zip(self.invalid_zip)
 
-    def test_extraction_valid_file(self):
-        """Ensures the unpacker successfully extracts a structurally sound zip."""
-        result = extract_dataset(self.valid_zip, self.extract_dir)
-        self.assertTrue(result)
-        # Verify the file actually made it out of the zip and onto the hard drive
-        self.assertTrue(os.path.exists(os.path.join(self.extract_dir, "dummy.txt")))
+        write_checksums([self.valid_zip, self.dummy_txt], self.test_dir, self.checksum_file)
+        problems = verify_checksums(self.checksum_file, self.test_dir)
+        self.assertEqual(problems, [])
+
+    def test_extraction_preserves_raw_archive_by_default(self):
+        """Ensure extraction succeeds and keeps raw archive in place by default."""
+        self.assertFalse(extract(self.invalid_zip, self.extract_dir))
+        self.assertTrue(extract(self.valid_zip, self.extract_dir))
+        self.assertTrue((self.extract_dir / "dummy.txt").is_file())
+        self.assertTrue(self.valid_zip.is_file())  # Raw archive preserved
 
     @classmethod
     def tearDownClass(cls):
-        """Cleans up all generated testing artifacts."""
-        for file in [cls.invalid_zip, cls.valid_zip, cls.dummy_txt]:
-            if os.path.exists(file):
-                os.remove(file)
-        if os.path.exists(cls.extract_dir):
-            shutil.rmtree(cls.extract_dir)
+        if cls.test_dir.is_dir():
+            shutil.rmtree(cls.test_dir)
+
 
 if __name__ == "__main__":
     unittest.main()
