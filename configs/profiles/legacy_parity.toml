@@ -1,0 +1,138 @@
+# Profile: legacy_parity -- reproduces the OLD pipeline's behaviour, used for the equivalence proof (phase 10).
+#   Brainnetome: cortical regions only (ids 1..210); subcortical atlas regions are registration landmarks only.
+#   BodyParts3D: every deep structure incl. thalamus/basal ganglia/amygdala; cortex = registration reference only.
+#   Registration moves Brainnetome INTO BodyParts3D with a bbox "fit_inside" scale (old behaviour, justified below).
+
+[anatomy.brain]
+include_ventricular_system = true
+include_cerebral_white_matter = true
+include_cranial_nerves = false
+
+[anatomy.spine]
+include_vertebrae = true
+include_intervertebral_discs = true
+include_spinal_cord = true
+
+[registration]
+moving_source = "brainnetome"
+allow_scale = true
+scale_init = "fit_inside"
+scale_reason = "legacy parity: individual BodyParts3D brain vs MNI template brain size difference (old fit_inside bbox scale)"
+
+[scene]
+frame = "atlas"
+
+[[selection.inclusions]]
+id = "legacy_ambiguous_hippocampus"
+source = "bodyparts3d"
+kind = "name_regex"
+match = "own_names"
+regex = '^(left |right )?hippocampus$'
+target = "subcortical_bp3d"
+
+[[profile.targets]]
+name = "cerebral_cortex"
+categories = ["cerebral_cortex"]
+owner = "brainnetome"
+fallback_owner = "bodyparts3d"
+group = "CEREBRAL_CORTEX"
+system = "BRAIN"
+collection = "CEREBRAL_CORTEX"
+reference_for_registration = true
+
+[[profile.targets]]
+name = "bn_subcortical_landmarks"
+categories = ["hippocampus", "amygdala", "basal_ganglia", "thalamus"]
+owner = "brainnetome"
+policy = "reference"                 # landmarks only, never imported
+reference_for_registration = true
+
+[[profile.targets]]
+name = "subcortical_bp3d"
+categories = ["amygdala", "basal_ganglia", "thalamus", "deep_gray_other"]
+owner = "bodyparts3d"
+group = "SUBCORTICAL_STRUCTURES"
+system = "BRAIN"
+collection = "SUBCORTICAL_STRUCTURES"
+
+[[profile.targets]]
+name = "hippocampus_review"
+categories = ["hippocampus"]
+owner = "bodyparts3d"
+policy = "review"
+
+[[profile.targets]]
+name = "cerebellum"
+categories = ["cerebellum"]
+owner = "bodyparts3d"
+group = "CEREBELLUM"
+system = "BRAIN"
+collection = "CEREBELLUM"
+
+[[profile.targets]]
+name = "brainstem"
+categories = ["brainstem"]
+owner = "bodyparts3d"
+group = "BRAINSTEM"
+system = "BRAIN"
+collection = "BRAINSTEM"
+
+[[profile.targets]]
+name = "ventricular_system"
+categories = ["ventricular_system"]
+owner = "bodyparts3d"
+group = "OTHER_BRAIN_STRUCTURES"
+system = "BRAIN"
+collection = "OTHER_BRAIN_STRUCTURES"
+enabled_by = "anatomy.brain.include_ventricular_system"
+
+[[profile.targets]]
+name = "white_matter"
+categories = ["white_matter"]
+owner = "bodyparts3d"
+group = "OTHER_BRAIN_STRUCTURES"
+system = "BRAIN"
+collection = "OTHER_BRAIN_STRUCTURES"
+enabled_by = "anatomy.brain.include_cerebral_white_matter"
+
+[[profile.targets]]
+name = "cranial_nerves"
+categories = ["cranial_nerve"]
+owner = "bodyparts3d"
+group = "CRANIAL_NERVES"
+system = "BRAIN"
+collection = "CRANIAL_NERVES"
+enabled_by = "anatomy.brain.include_cranial_nerves"
+
+[[profile.targets]]
+name = "vertebral_column"
+categories = ["vertebra"]
+owner = "bodyparts3d"
+group = "VERTEBRAE"
+system = "SPINAL_SYSTEM"
+collection = "VERTEBRAE"
+enabled_by = "anatomy.spine.include_vertebrae"
+
+[[profile.targets]]
+name = "intervertebral_discs"
+categories = ["intervertebral_disc"]
+owner = "bodyparts3d"
+group = "INTERVERTEBRAL_DISCS"
+system = "SPINAL_SYSTEM"
+collection = "INTERVERTEBRAL_DISCS"
+enabled_by = "anatomy.spine.include_intervertebral_discs"
+
+[[profile.targets]]
+name = "spinal_cord"
+categories = ["spinal_cord"]
+owner = "bodyparts3d"
+group = "SPINAL_CORD"
+system = "SPINAL_SYSTEM"
+collection = "SPINAL_CORD"
+enabled_by = "anatomy.spine.include_spinal_cord"
+
+[[profile.targets]]
+name = "adjacent_non_cns"
+categories = ["adjacent_structure"]
+owner = "bodyparts3d"
+policy = "review"

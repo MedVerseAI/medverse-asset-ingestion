@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "medverse"
+version = "0.2.0"
+description = "Generic, config-driven asset ingestion -> integrated Blender scene (BLEND + FBX)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = ["numpy", "scipy", "scikit-image"]
+
+[project.optional-dependencies]
+nifti = ["nibabel"]              # optional: a built-in NIfTI-1 reader is used otherwise
+decimate = ["fast-simplification"]
+dev = ["pytest"]
+
+[project.scripts]
+medverse = "medverse.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+medverse = ["exporters/blender_entry.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

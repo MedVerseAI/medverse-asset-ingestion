@@ -1,0 +1,334 @@
+# =============================================================================
+# MedVerse Asset Ingestion -- DEFAULTS.  Every key used by the engine exists here.
+# Resolution (later wins): default.toml -> profiles/<profile.name>.toml -> local.toml
+#                          -> --config <file> -> CLI overrides.
+# Unknown keys in strict sections raise an error (typos never fail silently).
+# =============================================================================
+
+[project]
+output_dir = ""                 # "" = <data>/processed/run
+data_dir = ""                   # "" = $MEDVERSE_DATA_DIR or <root>/data
+stop_on_stage_failure = false   # false: independent stages keep going, dependants are marked skipped
+
+[profile]
+name = "brain_spine"            # configs/profiles/<name>.toml  (anatomy scope + ownership + overlap)
+
+# ----------------------------------------------------------------- sources
+[sources.bodyparts3d]
+enabled = true
+root = ""                       # "" = <data>/raw/bodyparts3d
+metadata_dir = ""               # "" = <root>/metadata
+obj_dir = ""                    # "" = <data>/interim/bodyparts3d (extracted obj_isa / obj_partof)
+tree_priority = ["partof", "isa"]
+
+[sources.brainnetome]
+enabled = true
+root = ""                       # "" = <data>/raw/brainnetome
+atlas_file = "BNA_MPM_thr25_1.25mm.nii.gz"
+lut_file = "BN_Atlas_246_LUT.txt"
+cortical_max_id = 210           # ids 1..N cortical, N+1.. subcortical
+expected_regions = 246
+min_voxels = 10
+smooth_sigma = 0.8              # Gaussian blur before surface extraction (0 = blocky)
+on_lr_mismatch = "mirror"       # "mirror" | "warn" | "fail"  (label side contradicts the affine)
+
+# ----------------------------------------------------------------- selection
+[selection]
+unknown_policy = "review"       # "review" | "exclude"   (never automatic inclusion)
+
+# Highest priority: explicit exclusions (config-driven, never hard-coded)
+[[selection.exclusions]]
+id = "muscle_ontology"
+source = "bodyparts3d"
+kind = "ontology_subtree"
+tree = "isa"
+concepts = ["muscle organ"]
+
+[[selection.exclusions]]
+id = "muscle_name_rule"
+source = "bodyparts3d"
+kind = "name_regex"
+regex = '\bmuscle|muscul(?!oskeletal)|myocardi|sphincter|diaphragm'
+
+# Explicit inclusions (override semantic resolution).  Profile files extend this list.
+# [[selection.inclusions]]  id=..., source=..., kind="name_regex", match="own_names", regex=..., target=...
+
+# Configurable name fallback, used only when no semantic rule matched
+# [[selection.name_fallback]]  source=..., regex=..., category=...
+
+# ----------------------------------------------------------------- semantic classification
+# BodyParts3D: scopes are assigned in `scope_priority` order, rules are evaluated inside the assigned scope.
+[semantic.bodyparts3d]
+scope_priority = ["spinal_cord", "vertebral_column", "adjacent", "brain", "cranial_nerves"]
+
+[[semantic.bodyparts3d.scopes]]
+name = "spinal_cord"
+members = [{ kind = "ontology_elements", tree = "partof", concepts = ["spinal cord"] }]
+
+[[semantic.bodyparts3d.scopes]]
+name = "vertebral_column"
+members = [{ kind = "ontology_subtree", tree = "partof", concepts = ["vertebral column"] }]
+
+[[semantic.bodyparts3d.scopes]]
+name = "adjacent"
+exclude_scopes = ["brain"]
+members = [{ kind = "name_regex", regex = '^optic chiasm$|^pituitary gland$|tentorium cerebelli' }]
+
+[[semantic.bodyparts3d.scopes]]
+name = "brain"
+members = [
+  { kind = "ontology_elements", tree = "partof", concepts = ["brain"] },
+  { kind = "name_regex", regex = 'neuraxis|\bbrain\b|forebrain|midbrain|hindbrain|telencephalon|diencephalon|cerebral hemisphere', exclude_own_regex = 'arter|\bvein|venous|vascular|\bsinus|vessel|lymph' },
+]
+
+[[semantic.bodyparts3d.scopes]]
+name = "cranial_nerves"
+exclude_scopes = ["spinal_cord", "vertebral_column", "adjacent", "brain"]
+members = [{ kind = "name_regex", regex = '\bnerve\b' }]
+
+[[semantic.bodyparts3d.rules]]
+scope = "spinal_cord"
+category = "spinal_cord"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = 'intervertebral disk|intervertebral disc'
+category = "intervertebral_disc"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = '^sacrum$'
+category = "vertebra"
+subcategory = "sacral"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = 'coccyx|coccygeal vertebra'
+category = "vertebra"
+subcategory = "coccygeal"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = 'cervical vertebra|^atlas$|^axis$'
+category = "vertebra"
+subcategory = "cervical"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = 'thoracic vertebra'
+category = "vertebra"
+subcategory = "thoracic"
+
+[[semantic.bodyparts3d.rules]]
+scope = "vertebral_column"
+regex = 'lumbar vertebra'
+category = "vertebra"
+subcategory = "lumbar"
+
+[[semantic.bodyparts3d.rules]]
+scope = "adjacent"
+category = "adjacent_structure"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+match = "own_names"
+regex = '^(left |right )?hippocamp(us|al formation)$'
+category = "hippocampus"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = '\bgyrus\b|\bgyri\b|\blobule\b|^(left |right )?(frontal|parietal|temporal|occipital|limbic) lobe$|lobe of cerebral hemisphere|^cortex of|cerebral cortex|^(left |right )?insula$|prefrontal cortex'
+category = "cerebral_cortex"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = 'ventricle|aqueduct|choroid plexus|ventricular system|interventricular'
+category = "ventricular_system"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = '^cerebellum$'
+category = "cerebellum"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = '^pons$'
+category = "brainstem"
+subcategory = "pons"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = '^medulla oblongata$'
+category = "brainstem"
+subcategory = "medulla_oblongata"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = '^midbrain$|midbrain tectum|colliculus|peduncle of midbrain|^brainstem$'
+category = "brainstem"
+subcategory = "midbrain"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+match = "own_names"
+regex = 'caudate nucleus|putamen|globus pallidus'
+category = "basal_ganglia"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+match = "own_names"
+regex = 'amygdala'
+category = "amygdala"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+match = "own_names"
+regex = '^(left |right )?thalamus$'
+category = "thalamus"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = 'thalamus|hypothalamus|epithalamus|habenula|pineal|mammillary|tuber cinereum|geniculate|caudate nucleus|putamen|globus pallidus|amygdala|basal ganglion|nucleus of brain|hippocamp'
+category = "deep_gray_other"
+
+[[semantic.bodyparts3d.rules]]
+scope = "brain"
+regex = 'white matter|internal capsule|corpus callosum|commissure|fornix|stria (medullaris|terminalis)|lamina terminalis|septum of|^capsule|brachium'
+category = "white_matter"
+
+[[semantic.bodyparts3d.rules]]
+scope = "cranial_nerves"
+category = "cranial_nerve"
+
+# Brainnetome: classification from LUT names + adapter attributes
+[semantic.brainnetome]
+scope_priority = ["all"]
+
+[[semantic.brainnetome.scopes]]
+name = "all"
+members = [{ kind = "all" }]
+
+[[semantic.brainnetome.rules]]
+scope = "all"
+attr = { cortical = true }
+category = "cerebral_cortex"
+
+[[semantic.brainnetome.rules]]
+scope = "all"
+regex = 'hipp'
+category = "hippocampus"
+
+[[semantic.brainnetome.rules]]
+scope = "all"
+regex = 'amyg'
+category = "amygdala"
+
+[[semantic.brainnetome.rules]]
+scope = "all"
+regex = 'tha_'
+category = "thalamus"
+
+[[semantic.brainnetome.rules]]
+scope = "all"
+regex = '^(vca|dca|vmpu|dlpu|gp|nac)_'
+category = "basal_ganglia"
+
+# Categories that serve as registration landmarks (both sources, if geometry is available)
+[registration.landmarks]
+categories = ["thalamus", "basal_ganglia", "amygdala", "hippocampus"]
+reference_categories = ["cerebral_cortex"]     # surface clouds used for reference-geometry alignment + ICP
+# category -> regex on the label (lowercase) giving the landmark key, per source
+bodyparts3d = { thalamus = '^(left |right )?thalamus$', caudate = '^(left |right )?caudate nucleus$', putamen = '^(left |right )?putamen$', globus_pallidus = '^(left |right )?globus pallidus$', amygdala = '^(left |right )?amygdala$', hippocampus = '^(left |right )?hippocampus$' }
+brainnetome = { thalamus = 'tha_', caudate = '^(vca|dca)_', putamen = '^(vmpu|dlpu)_', globus_pallidus = '^gp_', amygdala = 'amyg', hippocampus = 'hipp' }
+
+# ----------------------------------------------------------------- geometry
+[geometry]
+weld_tolerance_mm = 0.001
+component_min_fraction = 0.005
+component_min_faces = 50
+default_face_budget = 50000
+decimation_aggressiveness = 5
+max_bbox_drift_mm = 1.0
+reference_point_count = 30000
+unit_candidate_factors = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+vertebral_column_length_range_mm = [350.0, 900.0]
+axis_orthogonality_tolerance_deg = 25.0
+spinal_cord_min_width_mm = 5.0
+region_gap_scale = 1.0          # 0.96 = visible gaps between Brainnetome regions
+
+[geometry.face_budget]
+VERTEBRAE = 80000
+INTERVERTEBRAL_DISCS = 12000
+SPINAL_CORD = 60000
+CEREBELLUM = 120000
+BRAINSTEM = 80000
+SUBCORTICAL_STRUCTURES = 40000
+OTHER_BRAIN_STRUCTURES = 40000
+CRANIAL_NERVES = 20000
+CEREBRAL_CORTEX = 60000
+
+# ----------------------------------------------------------------- registration
+[registration]
+moving_source = "bodyparts3d"   # moved INTO the frame of the other source (atlas affine stays untouched)
+allow_scale = false             # any scale must be justified by `scale_reason` and is logged
+scale_reason = ""
+scale_init = "none"            # "none" | "fit_inside" | "match_mean"  (only with allow_scale = true)
+landmark_min_count = 4
+landmark_max_residual_mm = 15.0
+use_icp = true
+sample_points = 6000
+icp_iterations = 40
+icp_trim_fraction = 0.75
+icp_scale_bounds = [0.85, 1.15] # only used when allow_scale = true
+hard_scale_limits = [0.7, 1.5]   # only used when allow_scale = true
+max_rotation_deg = 20.0
+max_translation_mm = 80.0
+manual_translation_mm = [0.0, 0.0, 0.0]
+manual_rotation_deg = [0.0, 0.0, 0.0]
+fail_on_low_confidence = false
+
+# ----------------------------------------------------------------- scene / export / reports
+[scene]
+root_name = "ANATOMICAL_MODEL"
+units_per_mm = 0.001            # 1 Blender unit = 1 m
+frame = "atlas"                 # world frame of the scene: "atlas" (fixed source frame) -- see registration
+center_on = "model_bbox"        # "model_bbox" | "cortex_bbox"
+clean_scene = true
+viewport_shading = "SOLID"
+viewport_euler_deg = [80.0, 0.0, 155.0]
+viewport_distance_factor = 3.2
+hide_grid = true
+material_prefix = "ANAT_"
+
+[scene.colors]
+VERTEBRAE = [0.86, 0.82, 0.70, 1.0]
+INTERVERTEBRAL_DISCS = [0.30, 0.52, 0.72, 1.0]
+SPINAL_CORD = [0.95, 0.88, 0.50, 1.0]
+CEREBELLUM = [0.72, 0.55, 0.48, 1.0]
+BRAINSTEM = [0.78, 0.66, 0.58, 1.0]
+SUBCORTICAL_STRUCTURES = [0.66, 0.48, 0.55, 1.0]
+OTHER_BRAIN_STRUCTURES = [0.85, 0.85, 0.80, 1.0]
+CRANIAL_NERVES = [0.95, 0.80, 0.30, 1.0]
+CEREBRAL_CORTEX = [0.80, 0.62, 0.60, 1.0]
+
+[blender]
+executable = ""                 # "" = $BLENDER env var, then "blender" on PATH
+timeout_s = 1800
+
+[export.blend]
+enabled = true
+filename = "anatomical_model.blend"
+
+[export.fbx]
+enabled = true
+filename = "anatomical_model.fbx"
+source = "auto"                 # "auto" (open the .blend if present, else rebuild from spec) | "spec"
+axis_forward = "-Z"
+axis_up = "Y"
+apply_unit_scale = true
+bake_space_transform = true
+verify_reimport = true
+
+[reporting]
+write_selection_review = true
+flush_after_each_stage = true

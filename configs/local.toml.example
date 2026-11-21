@@ -1,0 +1,5 @@
+# Copy to configs/local.toml (git-ignored) for personal settings.
+[blender]
+executable = "E:\\Programs\\blender\\blender.exe"
+# [project]
+# data_dir = "E:\\medverse-data"
