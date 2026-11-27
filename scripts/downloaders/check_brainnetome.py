@@ -21,8 +21,8 @@ for package_root in (REPO_ROOT, REPO_ROOT / "src"):
         if package_root_str not in sys.path:
             sys.path.insert(0, package_root_str)
 
-from medverse import paths
-from medverse.download import verify_zip, write_checksums
+from medverse import paths  # noqa: E402
+from medverse.download import verify_zip, write_checksums  # noqa: E402
 
 # (file, folder, required?)  Only the LUT is confirmed: it is the one Brainnetome input
 # read by the integration script. The rest are candidates until the input of

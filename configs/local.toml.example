@@ -1,0 +1,6 @@
+# Copy to configs/local.toml (git-ignored) for machine-specific overrides.
+[blender]
+executable = ""  # leave empty to use $BLENDER or `blender` on PATH, or set e.g. "/usr/local/bin/blender"
+
+# [project]
+# data_dir = "/path/to/medverse-data"
