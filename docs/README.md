@@ -11,10 +11,13 @@ The documentation currently covers **raw and intermediate data only** (BodyParts
 ```text
 docs/
 ├── README.md                          ← you are here
+├── ARCHITECTURE.md                    v0.2 11-stage config-driven pipeline architecture
+├── MIGRATION.md                       Migration notes from v1 (PR #9) to v0.2
 ├── data/
 │   ├── sources_and_licensing.md       Upstream sources, licenses, attribution, citations
 │   ├── download_and_layout.md         How to get the files, where they go, how to verify them
-│   └── data_dictionary.md             Columns, keys, counts and pitfalls of the input tables
+│   ├── data_dictionary.md             Columns, keys, counts and pitfalls of the input tables
+│   └── brainnetome_atlas.md           246-region Human Brainnetome Atlas guide & v0.2 integration
 └── ontology/
     └── foundational_model.md          How FMA, BP and FJ identifiers relate to each other
 ```
@@ -24,7 +27,21 @@ docs/
 | [`data/sources_and_licensing.md`](data/sources_and_licensing.md) | Check whether you may use or redistribute a dataset, find the required attribution text, or copy a citation. |
 | [`data/download_and_layout.md`](data/download_and_layout.md) | Download the datasets, find where files live on disk, run the downloader or checker scripts, or verify checksums. |
 | [`data/data_dictionary.md`](data/data_dictionary.md) | Look up the columns, keys, observed sizes and known pitfalls of the BodyParts3D metadata tables. |
+| [`data/brainnetome_atlas.md`](data/brainnetome_atlas.md) | Understand the 246-region Human Brainnetome parcellation, naming scheme, and v0.2 pipeline integration. |
 | [`ontology/foundational_model.md`](ontology/foundational_model.md) | Understand how anatomical concepts (`FMA`), representations (`BP`) and mesh elements (`FJ`) connect, and how that maps to the files. |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Understand the v0.2 11-stage pipeline contracts, profiles (`brain_spine`, `quest3_lod0`), and exporters (`BLEND`, `FBX`, `GLB`). |
+
+---
+
+## Engineering Performance Budgets (Meta Quest 3)
+
+| Parameter | Specification | Engineering Rationale |
+| :--- | :--- | :--- |
+| **Target Runtime** | Meta Quest 3 (Standalone XR) | Requires low draw-call overhead and strict geometry budgeting. |
+| **Framerate SLA** | 72+ FPS (Targeting 90 FPS) | Prevents simulation sickness and ensures comfortable VR immersion. |
+| **Polygon Cap** | **< 180,000 Triangles** (Combined) | Ensures smooth rendering alongside real-time lighting and shaders (`quest3_lod0` profile). |
+| **Material Budget** | Shared Lobe/Group Palette (~14–18 materials) | Prevents 224-material GPU draw-call overhead on standalone XR hardware. |
+| **Interactivity Tier** | Discrete Node Selection | Each structure remains an independent node for grabbing, isolation, and `MaterialPropertyBlock` highlighting. |
 
 ---
 
@@ -33,7 +50,9 @@ docs/
 1. **[Sources & licensing](data/sources_and_licensing.md):** confirm the terms before downloading or using any data.
 2. **[Download & layout](data/download_and_layout.md):** obtain the files and put them in the right place.
 3. **[Data dictionary](data/data_dictionary.md):** learn what is in each table.
-4. **[Foundational model](ontology/foundational_model.md):** understand the identifier model before writing code that joins the tables (For BodyParts3D).
+4. **[Brainnetome atlas](data/brainnetome_atlas.md):** understand the 246-region cortical + subcortical brain atlas.
+5. **[Foundational model](ontology/foundational_model.md):** understand the identifier model before writing code that joins the tables (For BodyParts3D).
+6. **[Architecture](ARCHITECTURE.md):** run the v0.2 pipeline (`medverse run --profile quest3_lod0`).
 
 ---
 

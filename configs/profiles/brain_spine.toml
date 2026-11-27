@@ -1,0 +1,126 @@
+# Profile: brain_spine  (the Architectural Specification profile)
+#   Brainnetome  owns : cortical regions, subcortical regions (all 246 atlas regions)
+#   BodyParts3D  owns : cerebellum, brainstem, spinal cord, vertebral column, discs, non-duplicated brain structures
+# Ownership + overlap policy live HERE, not in the engine.
+
+[anatomy.brain]
+include_ventricular_system = true
+include_cerebral_white_matter = true
+include_cranial_nerves = false
+
+[anatomy.spine]
+include_vertebrae = true
+include_intervertebral_discs = true
+include_spinal_cord = true
+
+[sources.brainnetome]
+cortical_max_id = 210
+
+[registration]
+moving_source = "bodyparts3d"
+allow_scale = false
+
+# --- targets: first matching target of a category wins ----------------------------------------------------
+[[profile.targets]]
+name = "cerebral_cortex"
+categories = ["cerebral_cortex"]
+owner = "brainnetome"
+fallback_owner = "bodyparts3d"       # used only when the owner source is disabled
+group = "CEREBRAL_CORTEX"
+system = "BRAIN"
+collection = "CEREBRAL_CORTEX"
+reference_for_registration = true    # non-owner copies become registration references, never scene objects
+
+[[profile.targets]]
+name = "subcortical_atlas_regions"
+categories = ["hippocampus", "amygdala", "basal_ganglia", "thalamus"]
+owner = "brainnetome"
+fallback_owner = "bodyparts3d"
+group = "SUBCORTICAL_STRUCTURES"
+system = "BRAIN"
+collection = "SUBCORTICAL_STRUCTURES"
+reference_for_registration = true
+
+[[profile.targets]]
+name = "diencephalon_and_other_deep_gray"
+categories = ["deep_gray_other"]
+owner = "bodyparts3d"
+group = "SUBCORTICAL_STRUCTURES"
+system = "BRAIN"
+collection = "SUBCORTICAL_STRUCTURES"
+
+[[profile.targets]]
+name = "cerebellum"
+categories = ["cerebellum"]
+owner = "bodyparts3d"
+group = "CEREBELLUM"
+system = "BRAIN"
+collection = "CEREBELLUM"
+
+[[profile.targets]]
+name = "brainstem"
+categories = ["brainstem"]
+owner = "bodyparts3d"
+group = "BRAINSTEM"
+system = "BRAIN"
+collection = "BRAINSTEM"
+
+[[profile.targets]]
+name = "ventricular_system"
+categories = ["ventricular_system"]
+owner = "bodyparts3d"
+group = "OTHER_BRAIN_STRUCTURES"
+system = "BRAIN"
+collection = "OTHER_BRAIN_STRUCTURES"
+enabled_by = "anatomy.brain.include_ventricular_system"
+
+[[profile.targets]]
+name = "white_matter"
+categories = ["white_matter"]
+owner = "bodyparts3d"
+group = "OTHER_BRAIN_STRUCTURES"
+system = "BRAIN"
+collection = "OTHER_BRAIN_STRUCTURES"
+enabled_by = "anatomy.brain.include_cerebral_white_matter"
+
+[[profile.targets]]
+name = "cranial_nerves"
+categories = ["cranial_nerve"]
+owner = "bodyparts3d"
+group = "CRANIAL_NERVES"
+system = "BRAIN"
+collection = "CRANIAL_NERVES"
+enabled_by = "anatomy.brain.include_cranial_nerves"
+
+[[profile.targets]]
+name = "vertebral_column"
+categories = ["vertebra"]
+owner = "bodyparts3d"
+group = "VERTEBRAE"
+system = "SPINAL_SYSTEM"
+collection = "VERTEBRAE"
+enabled_by = "anatomy.spine.include_vertebrae"
+
+[[profile.targets]]
+name = "intervertebral_discs"
+categories = ["intervertebral_disc"]
+owner = "bodyparts3d"
+group = "INTERVERTEBRAL_DISCS"
+system = "SPINAL_SYSTEM"
+collection = "INTERVERTEBRAL_DISCS"
+enabled_by = "anatomy.spine.include_intervertebral_discs"
+
+[[profile.targets]]
+name = "spinal_cord"
+categories = ["spinal_cord"]
+owner = "bodyparts3d"
+group = "SPINAL_CORD"
+system = "SPINAL_SYSTEM"
+collection = "SPINAL_CORD"
+enabled_by = "anatomy.spine.include_spinal_cord"
+
+[[profile.targets]]
+name = "adjacent_non_cns"
+categories = ["adjacent_structure"]
+owner = "bodyparts3d"
+policy = "review"                    # optic chiasm / pituitary / tentorium: reviewed, never auto-included

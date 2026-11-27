@@ -1,5 +1,23 @@
-# Ignore all dataset files
+# Ignore all dataset files while preserving folder placeholders
 data/*
+!data/.gitkeep
+!data/README.md
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+!data/interim/
+data/interim/*
+!data/interim/.gitkeep
+data/processed/
+
+# Local overrides, OS metadata, and large exported 3D binaries (publish via GitHub Releases / Git LFS)
+configs/local.toml
+.DS_Store
+*.blend
+*.blend1
+*.fbx
+*.glb
+*.gltf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
